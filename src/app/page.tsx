@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import PhotoGrid from "@/components/PhotoGrid";
 
 interface Photo {
   id: string;
@@ -50,54 +51,12 @@ export default async function HomePage() {
       <div className="mb-8">
         <h1 className="text-3xl font-bold">Etalase Digital Padusan</h1>
         <p className="text-base-content/70 mt-1">
-          Galeri foto digital warga Desa Padusan.
+          Galeri foto digital warga Desa Padusan. Klik foto untuk edit atau
+          hapus.
         </p>
       </div>
 
-      {photoList.length === 0 ? (
-        <div className="hero bg-base-200 rounded-box py-16">
-          <div className="hero-content text-center">
-            <div className="max-w-md">
-              <h2 className="text-2xl font-bold">No photos yet</h2>
-              <p className="py-4 text-base-content/70">
-                Belum ada foto yang diunggah. Jadilah yang pertama membagikan
-                momen dari Padusan.
-              </p>
-              <a href="/upload" className="btn btn-primary">
-                Upload Photo
-              </a>
-            </div>
-          </div>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-          {photoList.map((photo) => (
-            <div
-              key={photo.id}
-              className="card bg-base-100 shadow-md border border-base-300"
-            >
-              <figure className="aspect-square overflow-hidden bg-base-200">
-                <img
-                  src={photo.image_url}
-                  alt={photo.caption || "Photo"}
-                  className="w-full h-full object-cover"
-                />
-              </figure>
-              <div className="card-body">
-                <p className="text-sm">{photo.caption || "No caption"}</p>
-                <div className="card-actions flex flex-wrap gap-2 mt-2">
-                  {Array.isArray(photo.tags) &&
-                    photo.tags.map((tag, idx) => (
-                      <span key={idx} className="badge badge-outline badge-sm">
-                        {tag}
-                      </span>
-                    ))}
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
+      <PhotoGrid initialPhotos={photoList} />
     </main>
   );
 }

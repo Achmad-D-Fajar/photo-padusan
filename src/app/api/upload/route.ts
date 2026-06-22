@@ -128,29 +128,46 @@ export async function POST(request: NextRequest) {
 
     let analysis: GeminiResult = { caption: "Untitled photo", tags: [] };
 
-    try {
+try {
       const genAI = new GoogleGenerativeAI(geminiApiKey);
       const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
 
       const base64Data = buffer.toString("base64");
-      const promptText = buildPrompt(description);
+      const promptText = buildPrompt(description); // Fungsi opsional yang Anda tambahkan sebelumnya
 
-      const result = await model.generateContent([
-        {
-          inlineData: {
-            data: base64Data,
-            mimeType: file.type,
-          },
-        },
-        {
-          text: promptText,
-        },
-      ]);
+      // === MANUVER RESILIENSI: Implementasi Retry pada Error 429 ===
+      const MAX_RETRIES = 2; // Total mencoba (percobaan asli + 1 retry)
+      let attempt = 0;
+      let successfulAnalysis = false;
+      const imageData = { inlineData: { data: base64Data, mimeType: file.type } };
 
-      const responseText = result.response.text();
-      analysis = parseGeminiResponse(responseText);
+      while (attempt < MAX_RETRIES && !successfulAnalysis) {
+        try {
+          // Percobaan memanggil Gemini
+          const result = await model.generateContent([imageData, { text: promptText }]);
+          const responseText = result.response.text();
+          analysis = parseGeminiResponse(responseText);
+          successfulAnalysis = true; // Jika sampai sini tanpa error, set sukses
+          console.log(`[Attempt ${attempt + 1}] Gemini analysis successful.`);
+        } catch (geminiError: any) {
+          attempt++;
+          // Cek apakah error 429 (Too Many Requests)
+          if (geminiError.status === 429 && attempt < MAX_RETRIES) {
+            console.warn(`[Attempt ${attempt}] Hitting Gemini quota (429). Waiting 31s before retry...`);
+            // Tunggu selama 31 detik (sedikit lebih lama dari saran error)
+            await new Promise(resolve => setTimeout(resolve, 31000));
+          } else {
+            // Jika bukan 429, atau sudah habis kesempatan mencoba, lempar error untuk fallback
+            console.error(`[Attempt ${attempt}] Gemini analysis failed decisively or exhausted retries:`, geminiError);
+            throw geminiError;
+          }
+        }
+      }
+      // === AKHIR MANUVER RESILIENSI ===
+
     } catch (geminiError) {
-      console.error("Gemini analysis failed:", geminiError);
+      // Catch blok bawaan buatan Claude (untuk fallback ke 'Untitled photo')
+      console.error("Critical Gemini error caught by fallback:", geminiError);
     }
 
     const { data: insertedPhoto, error: insertError } = await supabase

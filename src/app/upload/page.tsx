@@ -157,18 +157,14 @@ export default function UploadPage() {
             </div>
           )}
 
-          <button
-            type="submit"
-            className="btn btn-primary"
-            disabled={status === "loading"}
-          >
+          <button type="submit" className="btn btn-primary" disabled={status === "loading"}>
             {status === "loading" ? (
-              <>
+                <>
                 <span className="loading loading-spinner loading-sm"></span>
-                Uploading...
-              </>
+                Menganalisis Visual... (Mungkin butuh waktu 1 menit)
+                </>
             ) : (
-              "Upload Photo"
+                "Upload Photo"
             )}
           </button>
 
