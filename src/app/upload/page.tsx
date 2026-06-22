@@ -1,74 +1,183 @@
 "use client";
-import { useState } from "react";
+
+import { useRef, useState } from "react";
+
+type Status = "idle" | "loading" | "success" | "error";
+
+const MAX_DESCRIPTION_LENGTH = 300;
 
 export default function UploadPage() {
-  const [file, setFile] = useState<File | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [status, setStatus] = useState<{ type: "success" | "error" | null; message: string }>({
-    type: null,
-    message: "",
-  });
+  const [status, setStatus] = useState<Status>("idle");
+  const [message, setMessage] = useState<string>("");
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [description, setDescription] = useState<string>("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleSumbit = async (e: React.FormEvent) => {
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (file) {
+      setPreviewUrl(URL.createObjectURL(file));
+    } else {
+      setPreviewUrl(null);
+    }
+    setStatus("idle");
+    setMessage("");
+  }
+
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (!file) return;
 
-    setLoading(true);
-    setStatus({ type: null, message: "" });
+    const file = fileInputRef.current?.files?.[0];
 
-    const formData = new FormData();
-    formData.append("file", file);
+    if (!file) {
+      setStatus("error");
+      setMessage("Please select an image file first.");
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      setStatus("error");
+      setMessage("File size exceeds the 5MB limit.");
+      return;
+    }
+
+    setStatus("loading");
+    setMessage("");
 
     try {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const trimmedDescription = description.trim();
+      if (trimmedDescription.length > 0) {
+        formData.append("description", trimmedDescription);
+      }
+
       const response = await fetch("/api/upload", {
         method: "POST",
         body: formData,
       });
 
-      const data = await response.json();
+      const result = await response.json();
 
-      if (!response.ok) throw new Error(data.error || "Gagal mengunggah foto");
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || "Upload failed. Please try again.");
+      }
 
-      setStatus({ type: "success", message: "Foto berhasil diunggah dan dianalisis!" });
-      setFile(null); // Reset form
-    } catch (error: any) {
-      setStatus({ type: "error", message: error.message });
-    } finally {
-      setLoading(false);
+      setStatus("success");
+      setMessage("Photo uploaded and analyzed successfully!");
+      setPreviewUrl(null);
+      setDescription("");
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+    } catch (err) {
+      setStatus("error");
+      setMessage(
+        err instanceof Error ? err.message : "An unknown error occurred."
+      );
     }
-  };
+  }
 
   return (
-    <main className="max-w-md mx-auto mt-10 p-6 bg-base-100 rounded-xl shadow-lg">
-      <h1 className="text-2xl font-bold mb-6 text-center">Unggah Karya Visual</h1>
-      
-      <form onSubmit={handleSumbit} className="flex flex-col gap-4">
-        <div className="form-control w-full">
-          <label className="label">
-            <span className="label-text font-semibold">Pilih Foto (Maks 5MB)</span>
-          </label>
-          <input
-            type="file"
-            accept="image/*"
-            className="file-input file-input-bordered file-input-primary w-full"
-            onChange={(e) => setFile(e.target.files?.[0] || null)}
-            disabled={loading}
-          />
-        </div>
+    <main className="container mx-auto px-4 py-10 max-w-xl">
+      <h1 className="text-3xl font-bold mb-2">Upload Photo</h1>
+      <p className="text-base-content/70 mb-8">
+        Bagikan momen dari Padusan. Foto akan dianalisis otomatis oleh AI.
+      </p>
 
-        {status.type && (
-          <div className={`alert ${status.type === "success" ? "alert-success" : "alert-error"}`}>
-            <span>{status.message}</span>
+      <form
+        onSubmit={handleSubmit}
+        className="card bg-base-100 border border-base-300 shadow-md"
+      >
+        <div className="card-body gap-4">
+          <div className="form-control">
+            <label className="label" htmlFor="file-input">
+              <span className="label-text">Select an image (max 5MB)</span>
+            </label>
+            <input
+              id="file-input"
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              onChange={handleFileChange}
+              className="file-input file-input-bordered w-full"
+              disabled={status === "loading"}
+            />
           </div>
-        )}
 
-        <button 
-          type="submit" 
-          className="btn btn-primary w-full mt-2" 
-          disabled={!file || loading}
-        >
-          {loading ? <span className="loading loading-spinner"></span> : "Unggah & Ekstrak Tag"}
-        </button>
+          {previewUrl && (
+            <div className="rounded-box overflow-hidden border border-base-300 aspect-square w-full max-w-xs mx-auto">
+              <img
+                src={previewUrl}
+                alt="Preview"
+                className="w-full h-full object-cover"
+              />
+            </div>
+          )}
+
+          <div className="form-control">
+            <label className="label" htmlFor="description-input">
+              <span className="label-text">
+                Deskripsi singkat (opsional)
+              </span>
+            </label>
+            <textarea
+              id="description-input"
+              value={description}
+              onChange={(e) =>
+                setDescription(e.target.value.slice(0, MAX_DESCRIPTION_LENGTH))
+              }
+              placeholder="Contoh: foto saat acara bersih desa di balai warga"
+              className="textarea textarea-bordered w-full"
+              rows={3}
+              disabled={status === "loading"}
+              maxLength={MAX_DESCRIPTION_LENGTH}
+            />
+            <label className="label">
+              <span className="label-text-alt text-base-content/60">
+                Jika diisi, AI akan mempertimbangkan deskripsi ini bersama
+                gambar. Jika kosong, AI hanya menganalisis gambar.
+              </span>
+              <span className="label-text-alt">
+                {description.length}/{MAX_DESCRIPTION_LENGTH}
+              </span>
+            </label>
+          </div>
+
+          {status === "success" && (
+            <div role="alert" className="alert alert-success">
+              <span>{message}</span>
+            </div>
+          )}
+
+          {status === "error" && (
+            <div role="alert" className="alert alert-error">
+              <span>{message}</span>
+            </div>
+          )}
+
+          <button
+            type="submit"
+            className="btn btn-primary"
+            disabled={status === "loading"}
+          >
+            {status === "loading" ? (
+              <>
+                <span className="loading loading-spinner loading-sm"></span>
+                Uploading...
+              </>
+            ) : (
+              "Upload Photo"
+            )}
+          </button>
+
+          {status === "success" && (
+            <a href="/" className="btn btn-outline btn-sm">
+              View Gallery
+            </a>
+          )}
+        </div>
       </form>
     </main>
   );
