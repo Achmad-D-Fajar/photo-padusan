@@ -9,13 +9,13 @@ export default function LogoutButton() {
 
   async function handleLogout() {
     await supabase.auth.signOut();
+    router.refresh(); // Memaksa Server Components merender ulang tanpa sesi
     router.push("/");
-    router.refresh();
   }
 
   return (
-    <button onClick={handleLogout} className="btn btn-ghost">
-      Logout
+    <button type="button" onClick={handleLogout} className="w-full text-left">
+      Keluar
     </button>
   );
 }

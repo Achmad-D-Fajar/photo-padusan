@@ -31,7 +31,7 @@ export default function PhotoGrid({ photos, keyword }: PhotoGridProps) {
             <p className="py-4 text-base-content/70">
               {keyword
                 ? "Coba gunakan kata kunci lain atau hapus filter pencarian."
-                : "Nantikan karya-karya fotografer komunitas kami di sini."}
+                : "Nantikan karya terbaik dari komunitas kami."}
             </p>
           </div>
         </div>
@@ -75,18 +75,18 @@ export default function PhotoGrid({ photos, keyword }: PhotoGridProps) {
               Oleh {getPhotographerLabel(photo.profiles)}
             </p>
 
-            <div className="card-actions mt-4">
-              {photo.microstock_url ? (
-                <a
-                  href={photo.microstock_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="btn btn-primary btn-sm w-full"
-                >
-                  Beli / Unduh Resolusi Tinggi
-                </a>
-              ) : (
-                <button
+        <div className="card-actions mt-4">
+           {photo.microstock_url ? (
+             <a
+               href={photo.microstock_url}
+               target="_blank"
+               rel="noopener noreferrer"
+               className="btn btn-primary btn-sm w-full"
+             >
+               Beli / Unduh Resolusi Tinggi
+             </a>
+           ) : (
+             <button
                   type="button"
                   className="btn btn-disabled btn-sm w-full"
                   disabled
