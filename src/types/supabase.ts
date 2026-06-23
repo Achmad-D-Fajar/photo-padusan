@@ -1,8 +1,3 @@
-// Tipe ini idealnya digenerate otomatis dari skema asli Supabase:
-//   npx supabase gen types typescript --project-id <id> > src/types/supabase.ts
-// Versi di bawah ditulis manual agar cocok dengan skema yang sudah dibuat
-// (tabel `profiles` dan `photos`). Update file ini setiap kali skema berubah.
-
 export interface Database {
   public: {
     Tables: {
@@ -12,70 +7,76 @@ export interface Database {
           display_name: string;
           full_name: string | null;
           bio: string | null;
-          avatar_url: string | null;
-          microstock_url: string | null;
           whatsapp: string | null;
           public_email: string | null;
-          other_links: any | null; // JSONB
-          updated_at: string | null;
+          microstock_url: string | null;
+          created_at: string;
         };
         Insert: {
           id: string;
           display_name: string;
           full_name?: string | null;
           bio?: string | null;
-          avatar_url?: string | null;
-          microstock_url?: string | null;
           whatsapp?: string | null;
           public_email?: string | null;
-          other_links?: any | null;
-          updated_at?: string | null;
+          microstock_url?: string | null;
+          created_at?: string;
         };
         Update: {
           id?: string;
           display_name?: string;
           full_name?: string | null;
           bio?: string | null;
-          avatar_url?: string | null;
-          microstock_url?: string | null;
           whatsapp?: string | null;
           public_email?: string | null;
-          other_links?: any | null;
-          updated_at?: string | null;
+          microstock_url?: string | null;
+          created_at?: string;
         };
-        Relationships: [
-          {
-            foreignKeyName: "profiles_id_fkey"
-            columns: ["id"]
-            isOneToOne: true
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          }
-        ];
+        Relationships: [];
       };
       photos: {
         Row: {
           id: string;
-          image_url: string;
+          user_id: string | null;
+          image_url: string | null;
+          thumbnail_url: string | null;
           caption: string;
           tags: string[];
+          microstock_url: string | null;
+          status: "draft" | "published" | "archived";
           created_at: string;
         };
         Insert: {
           id?: string;
-          image_url: string;
+          user_id: string;
+          image_url?: string | null;
+          thumbnail_url?: string | null;
           caption: string;
           tags?: string[];
+          microstock_url?: string | null;
+          status?: "draft" | "published" | "archived";
           created_at?: string;
         };
         Update: {
           id?: string;
-          image_url?: string;
+          user_id?: string;
+          image_url?: string | null;
+          thumbnail_url?: string | null;
           caption?: string;
           tags?: string[];
+          microstock_url?: string | null;
+          status?: "draft" | "published" | "archived";
           created_at?: string;
         };
-        Relationships: [];
+        Relationships: [
+          {
+            foreignKeyName: "photos_user_id_profiles_id_fkey";
+            columns: ["user_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          }
+        ];
       };
     };
     Views: Record<string, never>;
