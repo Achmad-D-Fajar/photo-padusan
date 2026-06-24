@@ -82,7 +82,23 @@ export interface Database {
         ];
       };
     };
-    Views: Record<string, never>;
+    Views: {
+      vw_public_photos: {
+        Row: {
+          id: string;
+          user_id: string | null;
+          thumbnail_url: string | null;
+          caption: string;
+          tags: string[];
+          tags_text: string | null;
+          microstock_url: string | null;
+          created_at: string;
+          display_name: string;
+          full_name: string | null;
+        };
+        Relationships: [];
+      };
+    };
     Functions: Record<string, never>;
     Enums: Record<string, never>;
     CompositeTypes: Record<string, never>;

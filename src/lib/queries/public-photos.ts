@@ -1,56 +1,109 @@
 import type { SupabaseClient, QueryData } from "@supabase/supabase-js";
 import type { Database } from "@/types/supabase";
+import { escapeIlikePattern } from "@/lib/supabase/ilike";
 
-// Select string didefinisikan sekali di sini agar konsisten dipakai
-// oleh page.tsx maupun kode lain yang mungkin butuh query serupa.
+export type SearchScope = "caption" | "uploader" | "tags";
+export type SortBy = "created_at" | "caption";
+export type SortOrder = "asc" | "desc";
+
+const ALL_SCOPES: SearchScope[] = ["caption", "uploader", "tags"];
+
+// Kolom diambil dari view `vw_public_photos` (migrasi 0007) — sudah satu
+// level datar, tidak ada lagi relasi bersarang `profiles { ... }` seperti
+// implementasi sebelumnya.
 const PUBLIC_PHOTOS_SELECT = `
   id,
+  user_id,
   thumbnail_url,
   caption,
   tags,
   microstock_url,
   created_at,
-  profiles ( display_name, full_name )
+  display_name,
+  full_name
 `;
 
-// % dan _ adalah wildcard pada operator ILIKE, harus di-escape agar
-// keyword pengguna tidak diperlakukan sebagai pattern matching liar.
-function escapeIlikePattern(value: string): string {
-  return value.replace(/[%_]/g, (match) => `\\${match}`);
+export interface BuildPublicPhotosQueryParams {
+  keyword?: string;
+  scopes?: SearchScope[];
+  startDate?: string;
+  endDate?: string;
+  sortBy?: SortBy;
+  sortOrder?: SortOrder;
 }
 
 export function buildPublicPhotosQuery(
   supabase: SupabaseClient<Database>,
-  keyword: string
+  {
+    keyword = "",
+    scopes = [],
+    startDate = "",
+    endDate = "",
+    sortBy = "created_at",
+    sortOrder = "desc",
+  }: BuildPublicPhotosQueryParams
 ) {
-  let query = supabase
-    .from("photos")
-    .select(PUBLIC_PHOTOS_SELECT)
-    .eq("status", "published")
-    .order("created_at", { ascending: false });
+  let query = supabase.from("vw_public_photos").select(PUBLIC_PHOTOS_SELECT);
 
-  if (keyword.length > 0) {
-    const escapedForIlike = escapeIlikePattern(keyword);
+  const trimmedKeyword = keyword.trim();
+  if (trimmedKeyword.length > 0) {
+    const escaped = escapeIlikePattern(trimmedKeyword);
 
-    // Gabungan dua kondisi via OR:
-    // 1. caption.ilike  -> substring match, case-insensitive.
-    // 2. tags.cs        -> jsonb "contains" check, exact match (case-sensitive)
-    //    terhadap salah satu elemen array tags.
-    // Catatan: pencarian pada tags TIDAK mendukung substring parsial
-    // (mis. "saw" tidak akan match tag "sawah"). Untuk itu diperlukan
-    // full-text search atau RPC khusus di iterasi berikutnya.
-    query = query.or(
-      `caption.ilike.%${escapedForIlike}%,tags.cs.["${keyword}"]`
-    );
+    // scopes kosong = default: cari di SEMUA lingkup (caption, uploader,
+    // tags). Jika user mencentang scope tertentu, batasi hanya ke situ.
+    const activeScopes = scopes.length > 0 ? scopes : ALL_SCOPES;
+
+    const orConditions: string[] = [];
+    if (activeScopes.includes("caption")) {
+      orConditions.push(`caption.ilike.%${escaped}%`);
+    }
+    if (activeScopes.includes("uploader")) {
+      orConditions.push(`display_name.ilike.%${escaped}%`);
+      orConditions.push(`full_name.ilike.%${escaped}%`);
+    }
+    if (activeScopes.includes("tags")) {
+      // tags_text adalah kolom agregasi di view (lihat migrasi 0007).
+      // Tidak ikut di-SELECT karena tidak ditampilkan ke UI, tapi tetap
+      // valid dipakai sebagai filter karena kolom asli pada view.
+      orConditions.push(`tags_text.ilike.%${escaped}%`);
+    }
+
+    if (orConditions.length > 0) {
+      query = query.or(orConditions.join(","));
+    }
   }
+
+  if (startDate.length > 0) {
+    query = query.gte("created_at", startDate);
+  }
+
+  if (endDate.length > 0) {
+    // Akhiri di penghujung hari tersebut agar tanggal akhir inklusif,
+    // bukan terpotong tepat di pukul 00:00.
+    query = query.lte("created_at", `${endDate}T23:59:59.999`);
+  }
+
+  query = query.order(sortBy, { ascending: sortOrder === "asc" });
 
   return query;
 }
 
-// QueryData mem-parsing select string di atas terhadap metadata
-// `Relationships` pada tipe Database, sehingga field `profiles` otomatis
-// bertipe akurat: { display_name: string; full_name: string | null } | null
-// — bukan `any[]` atau `never` seperti yang terjadi tanpa Relationships.
+export function buildPhotographerPhotosQuery(
+  supabase: SupabaseClient<Database>,
+  userId: string
+) {
+  return supabase
+    .from("vw_public_photos")
+    .select(PUBLIC_PHOTOS_SELECT)
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false });
+}
+
 export type PublicPhotosQuery = ReturnType<typeof buildPublicPhotosQuery>;
 export type PublicPhotosResult = QueryData<PublicPhotosQuery>;
 export type PublicPhotoItem = PublicPhotosResult[number];
+
+export type PhotographerPhotosQuery = ReturnType<
+  typeof buildPhotographerPhotosQuery
+>;
+export type PhotographerPhotosResult = QueryData<PhotographerPhotosQuery>;

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import LogoutButton from "./LogoutButton";
+import LogoutButton from "@/components/layouts/LogoutButton";
 
 function getInitial(label: string): string {
   const trimmed = label.trim();
@@ -11,8 +11,6 @@ export default async function Navbar() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-  // Jika env var Supabase tidak tersedia, tetap tampilkan navbar dasar
-  // (tanpa bagian auth) alih-alih membuat seluruh layout gagal render.
   if (!supabaseUrl || !supabaseAnonKey) {
     return (
       <div className="navbar bg-base-100 border-b border-base-300 px-4 sm:px-8">
@@ -58,7 +56,6 @@ export default async function Navbar() {
   return (
     <div className="navbar bg-base-100 border-b border-base-300 px-4 sm:px-8">
       <div className="navbar-start gap-1">
-        {/* Menu mobile: dropdown CSS-only DaisyUI, tidak perlu JS/client component */}
         <div className="dropdown lg:hidden">
           <div
             tabIndex={0}
@@ -145,8 +142,21 @@ export default async function Navbar() {
               tabIndex={0}
               className="menu menu-sm dropdown-content bg-base-100 rounded-box z-20 mt-3 w-56 p-2 shadow border border-base-300"
             >
-              <li className="menu-title">
-                <span>{fullName || `@${displayName}`}</span>
+              <li>
+                <Link
+                  href={`/photographer/${displayName}`}
+                  className="flex flex-col items-start py-2"
+                >
+                  <span className="font-semibold">
+                    {fullName || `@${displayName}`}
+                  </span>
+                  <span className="text-xs text-base-content/60">
+                    Lihat Profil Publik
+                  </span>
+                </Link>
+              </li>
+              <li>
+                <hr className="my-1 border-base-300" />
               </li>
               <li>
                 <Link href="/dashboard">Dasbor</Link>
@@ -157,9 +167,9 @@ export default async function Navbar() {
               <li>
                 <hr className="my-1 border-base-300" />
               </li>
-                <li>
-                  <LogoutButton />
-                </li>
+              <li>
+                <LogoutButton />
+              </li>
             </ul>
           </div>
         ) : (
