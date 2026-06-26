@@ -18,7 +18,6 @@ function canvasToBlob(canvas: HTMLCanvasElement): Promise<Blob> {
           resolve(webpBlob);
           return;
         }
-        // Fallback ke JPEG jika browser tidak mendukung encoding WebP via Canvas API.
         canvas.toBlob(
           (jpegBlob) => {
             if (jpegBlob) {
@@ -78,8 +77,12 @@ export default function UploadForm() {
   const [submitStatus, setSubmitStatus] = useState<SubmitStatus>("idle");
   const [message, setMessage] = useState("");
 
-  // Bersihkan object URL preview agar tidak membocorkan memori
-  // setiap kali preview berganti atau komponen unmount.
+  // State baru untuk menampung hasil generate AI & modal (Sesuai image_e6c3d9.png)
+  const [aiResult, setAiResult] = useState<{
+    caption: string;
+    tags: string[];
+  } | null>(null);
+
   useEffect(() => {
     return () => {
       if (previewUrl) {
@@ -165,10 +168,13 @@ export default function UploadForm() {
       }
 
       setSubmitStatus("success");
-      setMessage("Draf foto berhasil dibuat! Mengarahkan ke dasbor...");
+      setMessage("Draf foto berhasil dibuat!");
 
-      router.push("/dashboard");
-      router.refresh();
+      // Set hasil ke state untuk membuka modal, tidak langsung redirect
+      setAiResult({
+        caption: result.data.caption || "",
+        tags: Array.isArray(result.data.tags) ? result.data.tags : [],
+      });
     } catch (err) {
       setSubmitStatus("error");
       setMessage(
@@ -177,115 +183,190 @@ export default function UploadForm() {
     }
   }
 
+  function handleCloseModal() {
+    setAiResult(null);
+    router.push("/dashboard");
+    router.refresh();
+  }
+
   const isCompressing = compressStatus === "compressing";
   const isSubmitting = submitStatus === "loading";
   const canSubmit = compressStatus === "ready" && !isSubmitting;
 
   return (
-    <form
-      onSubmit={handleSubmit}
-      className="card bg-base-100 border border-base-300 shadow-md"
-    >
-      <div className="card-body gap-4">
-        <div className="form-control">
-          <label className="label" htmlFor="file-input">
-            <span className="label-text">Pilih gambar</span>
-          </label>
-          <input
-            id="file-input"
-            ref={fileInputRef}
-            type="file"
-            accept="image/*"
-            onChange={handleFileChange}
-            className="file-input file-input-bordered w-full"
-            disabled={isSubmitting}
-          />
-          <label className="label">
-            <span className="label-text-alt text-base-content/60">
-              Gambar otomatis dikompresi ke lebar maksimal {MAX_WIDTH_PX}px
-              sebelum diunggah.
-            </span>
-          </label>
-        </div>
-
-        {isCompressing && (
-          <div className="flex items-center gap-2 text-sm text-base-content/70">
-            <span className="loading loading-spinner loading-sm"></span>
-            Mengompres gambar...
+    <>
+      <form
+        onSubmit={handleSubmit}
+        className="card bg-base-100 border border-base-300 shadow-md"
+      >
+        <div className="card-body gap-4">
+          <div className="form-control">
+            <label className="label" htmlFor="file-input">
+              <span className="label-text">Pilih gambar</span>
+            </label>
+            <input
+              id="file-input"
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              onChange={handleFileChange}
+              className="file-input file-input-bordered w-full"
+              disabled={isSubmitting}
+            />
+            <label className="label">
+              <span className="label-text-alt text-base-content/60">
+                Gambar otomatis dikompresi ke lebar maksimal {MAX_WIDTH_PX}px
+                sebelum diunggah.
+              </span>
+            </label>
           </div>
-        )}
 
-        {previewUrl && compressStatus === "ready" && (
-          <div>
-            <div className="rounded-box overflow-hidden border border-base-300 aspect-square w-full max-w-xs mx-auto bg-base-200">
-              <img
-                src={previewUrl}
-                alt="Pratinjau"
-                className="w-full h-full object-cover"
-              />
-            </div>
-            {originalSize !== null && (
-              <p className="text-xs text-center text-base-content/50 mt-2">
-                Ukuran asli: {(originalSize / 1024).toFixed(0)} KB →
-                Terkompresi: {(compressedBlob!.size / 1024).toFixed(0)} KB
-              </p>
-            )}
-          </div>
-        )}
-
-        <div className="form-control">
-          <label className="label" htmlFor="description-input">
-            <span className="label-text">Deskripsi singkat (opsional)</span>
-          </label>
-          <textarea
-            id="description-input"
-            value={description}
-            onChange={(e) =>
-              setDescription(e.target.value.slice(0, MAX_DESCRIPTION_LENGTH))
-            }
-            placeholder="Contoh: foto pemandangan sawah saat matahari terbenam"
-            className="textarea textarea-bordered w-full"
-            rows={3}
-            disabled={isSubmitting}
-            maxLength={MAX_DESCRIPTION_LENGTH}
-          />
-          <label className="label">
-            <span className="label-text-alt text-base-content/60">
-              Membantu AI membuat caption dan tag yang lebih akurat.
-            </span>
-            <span className="label-text-alt">
-              {description.length}/{MAX_DESCRIPTION_LENGTH}
-            </span>
-          </label>
-        </div>
-
-        {submitStatus === "success" && (
-          <div role="alert" className="alert alert-success">
-            <span>{message}</span>
-          </div>
-        )}
-
-        {(submitStatus === "error" || compressStatus === "error") && (
-          <div role="alert" className="alert alert-error">
-            <span>{message}</span>
-          </div>
-        )}
-
-        <button
-          type="submit"
-          className="btn btn-primary"
-          disabled={!canSubmit}
-        >
-          {isSubmitting ? (
-            <>
+          {isCompressing && (
+            <div className="flex items-center gap-2 text-sm text-base-content/70">
               <span className="loading loading-spinner loading-sm"></span>
-              Memproses...
-            </>
-          ) : (
-            "Generate & Simpan Draf"
+              Mengompres gambar...
+            </div>
           )}
-        </button>
-      </div>
-    </form>
+
+          {previewUrl && compressStatus === "ready" && (
+            <div>
+              <div className="rounded-box overflow-hidden border border-base-300 aspect-square w-full max-w-xs mx-auto bg-base-200">
+                <img
+                  src={previewUrl}
+                  alt="Pratinjau"
+                  className="w-full h-full object-cover"
+                />
+              </div>
+              {originalSize !== null && (
+                <p className="text-xs text-center text-base-content/50 mt-2">
+                  Ukuran asli: {(originalSize / 1024).toFixed(0)} KB →
+                  Terkompresi: {(compressedBlob!.size / 1024).toFixed(0)} KB
+                </p>
+              )}
+            </div>
+          )}
+
+          <div className="form-control">
+            <label className="label" htmlFor="description-input">
+              <span className="label-text">Deskripsi singkat (opsional)</span>
+            </label>
+            <textarea
+              id="description-input"
+              value={description}
+              onChange={(e) =>
+                setDescription(e.target.value.slice(0, MAX_DESCRIPTION_LENGTH))
+              }
+              placeholder="Contoh: foto pemandangan sawah saat matahari terbenam"
+              className="textarea textarea-bordered w-full"
+              rows={3}
+              disabled={isSubmitting}
+              maxLength={MAX_DESCRIPTION_LENGTH}
+            />
+            <label className="label">
+              <span className="label-text-alt text-base-content/60">
+                Membantu AI membuat caption dan tag yang lebih akurat.
+              </span>
+              <span className="label-text-alt">
+                {description.length}/{MAX_DESCRIPTION_LENGTH}
+              </span>
+            </label>
+          </div>
+
+          {submitStatus === "success" && (
+            <div role="alert" className="alert alert-success">
+              <span>{message}</span>
+            </div>
+          )}
+
+          {(submitStatus === "error" || compressStatus === "error") && (
+            <div role="alert" className="alert alert-error">
+              <span>{message}</span>
+            </div>
+          )}
+
+          <button
+            type="submit"
+            className="btn btn-primary"
+            disabled={!canSubmit}
+          >
+            {isSubmitting ? (
+              <>
+                <span className="loading loading-spinner loading-sm"></span>
+                Memproses...
+              </>
+            ) : (
+              "Generate & Simpan Draf"
+            )}
+          </button>
+        </div>
+      </form>
+
+      {/* Modal Penampung Hasil Analisis AI (Sesuai image_e6c3d9.png) */}
+      {aiResult && (
+        <dialog className="modal modal-open z-50">
+          <div className="modal-box max-w-md border border-base-300 shadow-xl bg-base-100 p-6">
+            <h3 className="font-bold text-lg mb-4 text-center">Hasil Analisis AI</h3>
+
+            <div className="form-control w-full mb-4">
+              <label className="label font-medium text-sm pt-0">Caption:</label>
+              <div className="join w-full">
+                <textarea
+                  className="textarea textarea-bordered join-item w-full h-24 resize-none"
+                  value={aiResult.caption}
+                  onChange={(e) =>
+                    setAiResult({ ...aiResult, caption: e.target.value })
+                  }
+                />
+                <button
+                  type="button"
+                  className="btn btn-neutral join-item h-auto"
+                  onClick={() =>
+                    navigator.clipboard.writeText(aiResult.caption)
+                  }
+                >
+                  Salin
+                </button>
+              </div>
+            </div>
+
+            <div className="form-control w-full mb-6">
+              <label className="label font-medium text-sm pt-0">Tags:</label>
+              <div className="join w-full">
+                <input
+                  type="text"
+                  className="input input-bordered join-item w-full"
+                  value={aiResult.tags.join(", ")}
+                  onChange={(e) =>
+                    setAiResult({
+                      ...aiResult,
+                      tags: e.target.value.split(",").map((t) => t.trim()),
+                    })
+                  }
+                />
+                <button
+                  type="button"
+                  className="btn btn-neutral join-item h-auto"
+                  onClick={() =>
+                    navigator.clipboard.writeText(aiResult.tags.join(", "))
+                  }
+                >
+                  Salin
+                </button>
+              </div>
+            </div>
+
+            <div className="modal-action justify-center mt-2">
+              <button
+                type="button"
+                className="btn btn-primary w-32"
+                onClick={handleCloseModal}
+              >
+                Ok
+              </button>
+            </div>
+          </div>
+        </dialog>
+      )}
+    </>
   );
 }

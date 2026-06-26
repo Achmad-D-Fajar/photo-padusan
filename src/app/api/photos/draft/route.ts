@@ -4,8 +4,6 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 
 export const runtime = "nodejs";
 
-// Batas longgar untuk jaga-jaga; kompresi di client seharusnya
-// sudah membuat ukuran file jauh di bawah ini.
 const MAX_FILE_SIZE = 3 * 1024 * 1024;
 const MAX_DESCRIPTION_LENGTH = 300;
 
@@ -56,10 +54,6 @@ function extensionFromMimeType(mimeType: string): string {
 
 export async function POST(request: NextRequest) {
   try {
-    // 1. Verifikasi sesi pengguna lewat cookie-based server client.
-    //    Client ini (anon key + sesi user) yang dipakai untuk Storage
-    //    & insert DB, sehingga otomatis tunduk pada RLS policy
-    //    "auth.uid() = user_id" — tidak perlu Service Role Key sama sekali.
     const supabase = await createClient();
 
     const {
@@ -112,23 +106,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // CRITICAL: Konversi File -> ArrayBuffer -> Buffer sebelum dipakai
-    // untuk Storage upload maupun Gemini, agar konsisten di Node runtime.
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
-    // 2. Placeholder pengganti pemanggilan AI (Gemini Dinonaktifkan)
-    let analysis: GeminiResult = {
-      caption: description && description.trim().length > 0
-        ? `[Placeholder] ${description}`
-        : "[Placeholder] Visual dokumentasi Desa Padusan.",
-      tags: ["padusan", "desa", "dokumentasi", "placeholder", "test"]
-    };
+    // Blok Gemini diaktifkan
+    let analysis: GeminiResult;
 
-    /* === BLOK GEMINI ASLI DINONAKTIFKAN ===
     try {
       const genAI = new GoogleGenerativeAI(geminiApiKey);
-      const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+      // Menggunakan model flash terbaru untuk respons yang cepat dan efisien
+      const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
       const base64Data = buffer.toString("base64");
       const promptText = buildPrompt(description);
@@ -150,16 +137,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         {
           success: false,
-          error: "Gagal menganalisis gambar dengan AI. Silakan coba lagi.",
+          error: "Gagal menganalisis gambar dengan AI. Silakan periksa limit kuota atau coba lagi.",
         },
         { status: 502 }
       );
     }
-    === AKHIR BLOK GEMINI === */
 
-    // 3. Unggah file ke Supabase Storage, bucket `thumbnails`.
-    //    Path diawali user.id agar sesuai storage RLS policy
-    //    (storage.foldername(name))[1] = auth.uid()::text.
     const fileExtension = extensionFromMimeType(file.type);
     const fileName = `${user.id}/${crypto.randomUUID()}.${fileExtension}`;
 
@@ -183,7 +166,6 @@ export async function POST(request: NextRequest) {
 
     const thumbnailUrl = publicUrlData.publicUrl;
 
-    // 4. Insert ke tabel `photos` dengan status 'draft'.
     const { data: insertedPhoto, error: insertError } = await supabase
       .from("photos")
       .insert({
@@ -197,8 +179,6 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (insertError) {
-      // Rollback file di storage supaya tidak ada file orphan
-      // ketika insert ke database gagal.
       await supabase.storage.from("thumbnails").remove([fileName]);
 
       return NextResponse.json(
@@ -207,7 +187,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 5. Kembalikan respons sukses. Redirect ke /dashboard dilakukan di klien.
     return NextResponse.json(
       { success: true, data: insertedPhoto },
       { status: 201 }
