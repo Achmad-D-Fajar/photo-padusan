@@ -1,21 +1,83 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import type { Database } from "@/types/supabase";
+import {
+  buildMyPhotosQuery,
+  type SearchScope,
+  type SortBy,
+  type SortOrder,
+} from "@/lib/queries/public-photos";
+import {
+  sanitizePage,
+  sanitizePageSize,
+  computeRange,
+} from "@/lib/pagination";
+import SearchBar from "@/components/public/SearchBar";
+import MyPhotoGrid from "@/components/dashboard/MyPhotoGrid";
+import PaginationControls from "@/components/shared/PaginationControls";
 
-type PhotoRow = Database["public"]["Tables"]["photos"]["Row"];
-
-function StatusBadge({ status }: { status: PhotoRow["status"] }) {
-  if (status === "published") {
-    return <span className="badge badge-success">Published</span>;
-  }
-  if (status === "archived") {
-    return <span className="badge badge-neutral">Archived</span>;
-  }
-  return <span className="badge badge-warning">Draft</span>;
+interface DashboardPageProps {
+  searchParams: Promise<{
+    q?: string | string[];
+    scope?: string | string[];
+    start?: string | string[];
+    end?: string | string[];
+    sortBy?: string | string[];
+    sortOrder?: string | string[];
+    page?: string | string[];
+    pageSize?: string | string[];
+  }>;
 }
 
-export default async function DashboardPage() {
+// Dashboard tidak menyediakan scope "uploader" karena seluruh foto di
+// sini selalu milik diri sendiri — mencari berdasarkan nama uploader
+// tidak akan pernah mengubah hasil.
+const VALID_SCOPES: SearchScope[] = ["caption", "tags"];
+const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
+
+function firstValue(value: string | string[] | undefined): string {
+  return Array.isArray(value) ? value[0] ?? "" : value ?? "";
+}
+
+function sanitizeKeyword(raw: string): string {
+  return raw.trim().slice(0, 100).replace(/[(),"]/g, "");
+}
+
+function sanitizeScopes(raw: string): SearchScope[] {
+  if (!raw) return [];
+  const parsed = raw
+    .split(",")
+    .map((s) => s.trim())
+    .filter((s): s is SearchScope => VALID_SCOPES.includes(s as SearchScope));
+  return Array.from(new Set(parsed));
+}
+
+function sanitizeDate(raw: string): string {
+  return DATE_REGEX.test(raw) ? raw : "";
+}
+
+function sanitizeSortBy(raw: string): SortBy {
+  return raw === "caption" ? "caption" : "created_at";
+}
+
+function sanitizeSortOrder(raw: string): SortOrder {
+  return raw === "asc" ? "asc" : "desc";
+}
+
+export default async function DashboardPage({
+  searchParams,
+}: DashboardPageProps) {
+  const resolved = await searchParams;
+
+  const keyword = sanitizeKeyword(firstValue(resolved.q));
+  const scopes = sanitizeScopes(firstValue(resolved.scope));
+  const startDate = sanitizeDate(firstValue(resolved.start));
+  const endDate = sanitizeDate(firstValue(resolved.end));
+  const sortBy = sanitizeSortBy(firstValue(resolved.sortBy));
+  const sortOrder = sanitizeSortOrder(firstValue(resolved.sortOrder));
+  const page = sanitizePage(firstValue(resolved.page));
+  const pageSize = sanitizePageSize(firstValue(resolved.pageSize));
+
   const supabase = await createClient();
 
   const {
@@ -27,13 +89,14 @@ export default async function DashboardPage() {
     redirect("/login");
   }
 
-  const { data: photos, error: photosError } = await supabase
-    .from("photos")
-    .select(
-      "id, thumbnail_url, caption, tags, status, microstock_url, created_at"
-    )
-    .eq("user_id", user.id)
-    .order("created_at", { ascending: false });
+  const { from, to } = computeRange(page, pageSize);
+  const filters = { keyword, scopes, startDate, endDate, sortBy, sortOrder };
+
+  const { data: photos, count, error: photosError } = await buildMyPhotosQuery(
+    supabase,
+    user.id,
+    { ...filters, from, to }
+  );
 
   if (photosError) {
     return (
@@ -46,10 +109,45 @@ export default async function DashboardPage() {
   }
 
   const photoList = photos ?? [];
+  const totalCount = count ?? 0;
+  const isFiltering =
+    keyword.length > 0 ||
+    scopes.length > 0 ||
+    startDate.length > 0 ||
+    endDate.length > 0;
+
+  async function loadMoreMyPhotos(offset: number, limit: number) {
+    "use server";
+
+    const supabaseForAction = await createClient();
+
+    const {
+      data: { user: actionUser },
+    } = await supabaseForAction.auth.getUser();
+
+    if (!actionUser) {
+      return {
+        items: [],
+        error: "Sesi telah berakhir. Silakan muat ulang halaman.",
+      };
+    }
+
+    const { data, error: loadMoreErrorResult } = await buildMyPhotosQuery(
+      supabaseForAction,
+      actionUser.id,
+      { ...filters, from: offset, to: offset + limit - 1 }
+    );
+
+    if (loadMoreErrorResult) {
+      return { items: [], error: loadMoreErrorResult.message };
+    }
+
+    return { items: data ?? [], error: null };
+  }
 
   return (
     <main className="container mx-auto px-4 py-10">
-      <div className="flex flex-wrap items-end justify-between gap-4 mb-8">
+      <div className="flex flex-wrap items-end justify-between gap-4 mb-6">
         <div>
           <h1 className="text-3xl font-bold">Dasbor Saya</h1>
           <p className="text-base-content/70 mt-1">
@@ -61,68 +159,28 @@ export default async function DashboardPage() {
         </Link>
       </div>
 
-      {photoList.length === 0 ? (
-        <div className="hero bg-base-200 rounded-box py-16">
-          <div className="hero-content text-center">
-            <div className="max-w-md">
-              <h2 className="text-2xl font-bold">Belum ada foto</h2>
-              <p className="py-4 text-base-content/70">
-                Mulai unggah foto pertama Anda untuk membuat draf yang akan
-                dianalisis oleh AI.
-              </p>
-              <Link href="/dashboard/upload" className="btn btn-primary">
-                Unggah Foto
-              </Link>
-            </div>
-          </div>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-          {photoList.map((photo) => (
-            <div
-              key={photo.id}
-              className="card bg-base-100 shadow-md border border-base-300"
-            >
-              <figure className="aspect-square overflow-hidden bg-base-200">
-                {photo.thumbnail_url ? (
-                  <img
-                    src={photo.thumbnail_url}
-                    alt={photo.caption || "Foto"}
-                    className="w-full h-full object-cover"
-                  />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center text-base-content/40 text-sm">
-                    Tidak ada gambar
-                  </div>
-                )}
-              </figure>
-              <div className="card-body">
-                <div className="flex items-start justify-between gap-2">
-                  <p className="text-sm flex-1">
-                    {photo.caption || "Tanpa caption"}
-                  </p>
-                  <StatusBadge status={photo.status} />
-                </div>
-                <div className="flex flex-wrap gap-2 mt-2">
-                  {Array.isArray(photo.tags) &&
-                    photo.tags.map((tag, idx) => (
-                      <span key={idx} className="badge badge-outline badge-sm">
-                        {tag}
-                      </span>
-                    ))}
-                </div>
-                <div className="card-actions mt-4">
-                  <Link
-                    href={`/dashboard/edit/${photo.id}`}
-                    className="btn btn-sm btn-primary w-full"
-                  >
-                    Edit / Publikasikan
-                  </Link>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
+      <div className="max-w-2xl mb-6">
+        <SearchBar
+          initialKeyword={keyword}
+          initialScopes={scopes}
+          initialStartDate={startDate}
+          initialEndDate={endDate}
+          initialSortBy={sortBy}
+          initialSortOrder={sortOrder}
+          availableScopes={VALID_SCOPES}
+        />
+      </div>
+
+      <MyPhotoGrid
+        photos={photoList}
+        totalCount={totalCount}
+        initialOffset={from}
+        isFiltering={isFiltering}
+        loadMoreAction={loadMoreMyPhotos}
+      />
+
+      {totalCount > 0 && (
+        <PaginationControls page={page} pageSize={pageSize} totalCount={totalCount} />
       )}
     </main>
   );

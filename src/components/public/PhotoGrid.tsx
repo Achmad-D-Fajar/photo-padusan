@@ -3,16 +3,28 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import type { PublicPhotoItem } from "@/lib/queries/public-photos";
+import { LOAD_MORE_INCREMENT } from "@/lib/pagination";
+
+interface LoadMoreResult {
+  items: PublicPhotoItem[];
+  error: string | null;
+}
 
 interface PhotoGridProps {
   photos: PublicPhotoItem[];
+  totalCount: number;
+  // Offset absolut dari halaman yang sedang ditampilkan (hasil
+  // computeRange di server). WAJIB agar "Load More" menghitung offset
+  // selanjutnya dengan benar saat user sudah berada di halaman 2+ —
+  // tanpa ini, Load More akan salah mengambil ulang item dari awal data.
+  initialOffset: number;
   isFiltering: boolean;
+  loadMoreAction?: (
+    offset: number,
+    limit: number
+  ) => Promise<LoadMoreResult>;
 }
 
-// Sebelumnya membaca photo.profiles.display_name (nested); sekarang
-// langsung photo.display_name karena vw_public_photos sudah flat.
-// `display_name` selalu ada (inner join di view), `full_name` tetap
-// nullable seperti di tabel profiles aslinya.
 function getPhotographerLabel(photo: PublicPhotoItem): string {
   if (photo.full_name && photo.full_name.trim().length > 0) {
     return photo.full_name;
@@ -32,10 +44,27 @@ function formatUploadDate(isoDate: string): string {
   });
 }
 
-export default function PhotoGrid({ photos, isFiltering }: PhotoGridProps) {
+export default function PhotoGrid({
+  photos,
+  totalCount,
+  initialOffset,
+  isFiltering,
+  loadMoreAction,
+}: PhotoGridProps) {
+  const [items, setItems] = useState<PublicPhotoItem[]>(photos);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [loadMoreError, setLoadMoreError] = useState("");
   const [selectedPhoto, setSelectedPhoto] = useState<PublicPhotoItem | null>(
     null
   );
+
+  // Setiap kali server merender ulang (ganti halaman, ganti filter, dsb.),
+  // `photos` selalu berupa array baru — reset akumulasi "Load More" agar
+  // tidak tercampur dengan data dari konteks/filter sebelumnya.
+  useEffect(() => {
+    setItems(photos);
+    setLoadMoreError("");
+  }, [photos, initialOffset]);
 
   function closeModal() {
     setSelectedPhoto(null);
@@ -54,7 +83,34 @@ export default function PhotoGrid({ photos, isFiltering }: PhotoGridProps) {
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [selectedPhoto]);
 
-  if (photos.length === 0) {
+  const remainingCount = totalCount - (initialOffset + items.length);
+  const hasMore = remainingCount > 0;
+
+  async function handleLoadMore() {
+    if (!loadMoreAction || isLoadingMore) return;
+
+    setIsLoadingMore(true);
+    setLoadMoreError("");
+
+    try {
+      const offset = initialOffset + items.length;
+      const result = await loadMoreAction(offset, LOAD_MORE_INCREMENT);
+
+      if (result.error) {
+        throw new Error(result.error);
+      }
+
+      setItems((prev) => [...prev, ...result.items]);
+    } catch (err) {
+      setLoadMoreError(
+        err instanceof Error ? err.message : "Gagal memuat foto tambahan."
+      );
+    } finally {
+      setIsLoadingMore(false);
+    }
+  }
+
+  if (items.length === 0) {
     return (
       <div className="hero bg-base-200 rounded-box py-16">
         <div className="hero-content text-center">
@@ -78,7 +134,7 @@ export default function PhotoGrid({ photos, isFiltering }: PhotoGridProps) {
   return (
     <>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-        {photos.map((photo) => {
+        {items.map((photo) => {
           const photographerLabel = getPhotographerLabel(photo);
           const photographerHref = getPhotographerHref(photo);
 
@@ -130,6 +186,32 @@ export default function PhotoGrid({ photos, isFiltering }: PhotoGridProps) {
           );
         })}
       </div>
+
+      {loadMoreError && (
+        <div role="alert" className="alert alert-error mt-4">
+          <span>{loadMoreError}</span>
+        </div>
+      )}
+
+      {loadMoreAction && hasMore && (
+        <div className="flex justify-center mt-6">
+          <button
+            type="button"
+            onClick={handleLoadMore}
+            className="btn btn-outline"
+            disabled={isLoadingMore}
+          >
+            {isLoadingMore ? (
+              <>
+                <span className="loading loading-spinner loading-sm"></span>
+                Memuat...
+              </>
+            ) : (
+              `Muat ${Math.min(LOAD_MORE_INCREMENT, remainingCount)} Foto Lagi`
+            )}
+          </button>
+        </div>
+      )}
 
       <dialog className={`modal ${selectedPhoto ? "modal-open" : ""}`}>
         {selectedPhoto && (

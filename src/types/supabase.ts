@@ -45,6 +45,9 @@ export interface Database {
           thumbnail_url: string | null;
           caption: string;
           tags: string[];
+          // Generated column (stored), read-only — TIDAK ada di Insert/Update
+          // karena Postgres menolak penulisan manual ke kolom ini.
+          tags_text: string | null;
           microstock_url: string | null;
           status: "draft" | "published" | "archived";
           created_at: string;

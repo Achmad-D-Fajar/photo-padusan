@@ -8,9 +8,19 @@ export type SortOrder = "asc" | "desc";
 
 const ALL_SCOPES: SearchScope[] = ["caption", "uploader", "tags"];
 
-// Kolom diambil dari view `vw_public_photos` (migrasi 0007) — sudah satu
-// level datar, tidak ada lagi relasi bersarang `profiles { ... }` seperti
-// implementasi sebelumnya.
+export interface PhotoQueryFilters {
+  keyword?: string;
+  scopes?: SearchScope[];
+  startDate?: string;
+  endDate?: string;
+  sortBy?: SortBy;
+  sortOrder?: SortOrder;
+  from: number;
+  to: number;
+}
+
+// Kolom dari view `vw_public_photos` (migrasi 0007 & 0008) — satu level
+// datar, tidak ada relasi bersarang `profiles { ... }`.
 const PUBLIC_PHOTOS_SELECT = `
   id,
   user_id,
@@ -23,13 +33,37 @@ const PUBLIC_PHOTOS_SELECT = `
   full_name
 `;
 
-export interface BuildPublicPhotosQueryParams {
-  keyword?: string;
-  scopes?: SearchScope[];
-  startDate?: string;
-  endDate?: string;
-  sortBy?: SortBy;
-  sortOrder?: SortOrder;
+// Kolom dari tabel `photos` langsung (bukan view), karena Dashboard perlu
+// menampilkan SEMUA status (draft/published/archived) milik diri sendiri —
+// vw_public_photos sengaja hanya berisi status 'published'.
+const MY_PHOTOS_SELECT = `
+  id,
+  thumbnail_url,
+  caption,
+  tags,
+  microstock_url,
+  status,
+  created_at
+`;
+
+function buildOrConditions(
+  escapedKeyword: string,
+  activeScopes: SearchScope[]
+): string[] {
+  const conditions: string[] = [];
+
+  if (activeScopes.includes("caption")) {
+    conditions.push(`caption.ilike.%${escapedKeyword}%`);
+  }
+  if (activeScopes.includes("uploader")) {
+    conditions.push(`display_name.ilike.%${escapedKeyword}%`);
+    conditions.push(`full_name.ilike.%${escapedKeyword}%`);
+  }
+  if (activeScopes.includes("tags")) {
+    conditions.push(`tags_text.ilike.%${escapedKeyword}%`);
+  }
+
+  return conditions;
 }
 
 export function buildPublicPhotosQuery(
@@ -41,32 +75,19 @@ export function buildPublicPhotosQuery(
     endDate = "",
     sortBy = "created_at",
     sortOrder = "desc",
-  }: BuildPublicPhotosQueryParams
+    from,
+    to,
+  }: PhotoQueryFilters
 ) {
-  let query = supabase.from("vw_public_photos").select(PUBLIC_PHOTOS_SELECT);
+  let query = supabase
+    .from("vw_public_photos")
+    .select(PUBLIC_PHOTOS_SELECT, { count: "exact" });
 
   const trimmedKeyword = keyword.trim();
   if (trimmedKeyword.length > 0) {
     const escaped = escapeIlikePattern(trimmedKeyword);
-
-    // scopes kosong = default: cari di SEMUA lingkup (caption, uploader,
-    // tags). Jika user mencentang scope tertentu, batasi hanya ke situ.
     const activeScopes = scopes.length > 0 ? scopes : ALL_SCOPES;
-
-    const orConditions: string[] = [];
-    if (activeScopes.includes("caption")) {
-      orConditions.push(`caption.ilike.%${escaped}%`);
-    }
-    if (activeScopes.includes("uploader")) {
-      orConditions.push(`display_name.ilike.%${escaped}%`);
-      orConditions.push(`full_name.ilike.%${escaped}%`);
-    }
-    if (activeScopes.includes("tags")) {
-      // tags_text adalah kolom agregasi di view (lihat migrasi 0007).
-      // Tidak ikut di-SELECT karena tidak ditampilkan ke UI, tapi tetap
-      // valid dipakai sebagai filter karena kolom asli pada view.
-      orConditions.push(`tags_text.ilike.%${escaped}%`);
-    }
+    const orConditions = buildOrConditions(escaped, activeScopes);
 
     if (orConditions.length > 0) {
       query = query.or(orConditions.join(","));
@@ -76,34 +97,126 @@ export function buildPublicPhotosQuery(
   if (startDate.length > 0) {
     query = query.gte("created_at", startDate);
   }
-
   if (endDate.length > 0) {
-    // Akhiri di penghujung hari tersebut agar tanggal akhir inklusif,
-    // bukan terpotong tepat di pukul 00:00.
     query = query.lte("created_at", `${endDate}T23:59:59.999`);
   }
 
-  query = query.order(sortBy, { ascending: sortOrder === "asc" });
+  // Tie-breaker `id` memastikan urutan deterministik antar-halaman —
+  // tanpa ini, baris dengan caption/created_at yang sama persis bisa
+  // terlewat atau muncul dua kali saat berpindah halaman (offset
+  // pagination rentan terhadap urutan yang tidak stabil).
+  query = query
+    .order(sortBy, { ascending: sortOrder === "asc" })
+    .order("id", { ascending: true })
+    .range(from, to);
 
   return query;
 }
 
 export function buildPhotographerPhotosQuery(
   supabase: SupabaseClient<Database>,
-  userId: string
+  userId: string,
+  {
+    keyword = "",
+    scopes = [],
+    startDate = "",
+    endDate = "",
+    sortBy = "created_at",
+    sortOrder = "desc",
+    from,
+    to,
+  }: PhotoQueryFilters
 ) {
-  return supabase
+  let query = supabase
     .from("vw_public_photos")
-    .select(PUBLIC_PHOTOS_SELECT)
-    .eq("user_id", userId)
-    .order("created_at", { ascending: false });
+    .select(PUBLIC_PHOTOS_SELECT, { count: "exact" })
+    .eq("user_id", userId);
+
+  const trimmedKeyword = keyword.trim();
+  if (trimmedKeyword.length > 0) {
+    const escaped = escapeIlikePattern(trimmedKeyword);
+    // Scope "uploader" sengaja diabaikan: seluruh foto di halaman ini
+    // sudah pasti milik satu fotografer yang sama, jadi tidak pernah
+    // mengubah hasil.
+    const activeScopes = scopes.filter((s) => s !== "uploader");
+    const effectiveScopes: SearchScope[] =
+      activeScopes.length > 0 ? activeScopes : ["caption", "tags"];
+    const orConditions = buildOrConditions(escaped, effectiveScopes);
+
+    if (orConditions.length > 0) {
+      query = query.or(orConditions.join(","));
+    }
+  }
+
+  if (startDate.length > 0) {
+    query = query.gte("created_at", startDate);
+  }
+  if (endDate.length > 0) {
+    query = query.lte("created_at", `${endDate}T23:59:59.999`);
+  }
+
+  query = query
+    .order(sortBy, { ascending: sortOrder === "asc" })
+    .order("id", { ascending: true })
+    .range(from, to);
+
+  return query;
+}
+
+export function buildMyPhotosQuery(
+  supabase: SupabaseClient<Database>,
+  userId: string,
+  {
+    keyword = "",
+    scopes = [],
+    startDate = "",
+    endDate = "",
+    sortBy = "created_at",
+    sortOrder = "desc",
+    from,
+    to,
+  }: PhotoQueryFilters
+) {
+  let query = supabase
+    .from("photos")
+    .select(MY_PHOTOS_SELECT, { count: "exact" })
+    .eq("user_id", userId);
+
+  const trimmedKeyword = keyword.trim();
+  if (trimmedKeyword.length > 0) {
+    const escaped = escapeIlikePattern(trimmedKeyword);
+    const activeScopes = scopes.filter((s) => s !== "uploader");
+    const effectiveScopes: SearchScope[] =
+      activeScopes.length > 0 ? activeScopes : ["caption", "tags"];
+    const orConditions = buildOrConditions(escaped, effectiveScopes);
+
+    if (orConditions.length > 0) {
+      query = query.or(orConditions.join(","));
+    }
+  }
+
+  if (startDate.length > 0) {
+    query = query.gte("created_at", startDate);
+  }
+  if (endDate.length > 0) {
+    query = query.lte("created_at", `${endDate}T23:59:59.999`);
+  }
+
+  query = query
+    .order(sortBy, { ascending: sortOrder === "asc" })
+    .order("id", { ascending: true })
+    .range(from, to);
+
+  return query;
 }
 
 export type PublicPhotosQuery = ReturnType<typeof buildPublicPhotosQuery>;
 export type PublicPhotosResult = QueryData<PublicPhotosQuery>;
 export type PublicPhotoItem = PublicPhotosResult[number];
 
-export type PhotographerPhotosQuery = ReturnType<
-  typeof buildPhotographerPhotosQuery
->;
+export type PhotographerPhotosQuery = ReturnType<typeof buildPhotographerPhotosQuery>;
 export type PhotographerPhotosResult = QueryData<PhotographerPhotosQuery>;
+
+export type MyPhotosQuery = ReturnType<typeof buildMyPhotosQuery>;
+export type MyPhotosResult = QueryData<MyPhotosQuery>;
+export type MyPhotoItem = MyPhotosResult[number];

@@ -14,6 +14,13 @@ interface SearchBarProps {
   initialEndDate: string;
   initialSortBy: SortBy;
   initialSortOrder: SortOrder;
+  // Membatasi lingkup pencarian yang ditampilkan — mis. Dashboard & Profil
+  // Fotografer tidak butuh opsi "Uploader" karena selalu satu orang yang
+  // sama.
+  availableScopes?: SearchScope[];
+  // Mode ringkas: satu tombol ikon yang membuka panel berisi semua kontrol,
+  // dipakai di halaman Profil Fotografer agar tidak memakan banyak tempat.
+  compact?: boolean;
 }
 
 interface FilterState {
@@ -27,11 +34,55 @@ interface FilterState {
 
 const DEBOUNCE_MS = 500;
 
-const SCOPE_OPTIONS: { value: SearchScope; label: string }[] = [
+const ALL_SCOPE_OPTIONS: { value: SearchScope; label: string }[] = [
   { value: "caption", label: "Caption" },
   { value: "uploader", label: "Uploader" },
   { value: "tags", label: "Tags" },
 ];
+
+const DEFAULT_AVAILABLE_SCOPES: SearchScope[] = [
+  "caption",
+  "uploader",
+  "tags",
+];
+
+function SearchIcon() {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      className="h-4 w-4"
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M21 21l-4.35-4.35M17 11a6 6 0 11-12 0 6 6 0 0112 0z"
+      />
+    </svg>
+  );
+}
+
+function FilterIcon() {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      className="h-4 w-4"
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M3 7h18M6 12h12M10 17h4"
+      />
+    </svg>
+  );
+}
 
 export default function SearchBar({
   initialKeyword,
@@ -40,6 +91,8 @@ export default function SearchBar({
   initialEndDate,
   initialSortBy,
   initialSortOrder,
+  availableScopes = DEFAULT_AVAILABLE_SCOPES,
+  compact = false,
 }: SearchBarProps) {
   const router = useRouter();
   const pathname = usePathname();
@@ -53,6 +106,10 @@ export default function SearchBar({
   const [sortOrder, setSortOrder] = useState<SortOrder>(initialSortOrder);
 
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const scopeOptions = ALL_SCOPE_OPTIONS.filter((option) =>
+    availableScopes.includes(option.value)
+  );
 
   function clearDebounce() {
     if (debounceTimerRef.current) {
@@ -70,10 +127,9 @@ export default function SearchBar({
       params.delete("q");
     }
 
-    // Scope kosong/lengkap = default "cari semua", tidak perlu di URL.
     if (
       state.scopes.length > 0 &&
-      state.scopes.length < SCOPE_OPTIONS.length
+      state.scopes.length < scopeOptions.length
     ) {
       params.set("scope", state.scopes.join(","));
     } else {
@@ -103,6 +159,11 @@ export default function SearchBar({
     } else {
       params.delete("sortOrder");
     }
+
+    // Filter/sort apa pun yang berubah selalu mengembalikan ke halaman 1,
+    // karena hasil pada halaman lama kemungkinan besar sudah tidak relevan
+    // dengan filter yang baru.
+    params.delete("page");
 
     const queryString = params.toString();
     router.push(queryString ? `${pathname}?${queryString}` : pathname);
@@ -180,7 +241,119 @@ export default function SearchBar({
   }, []);
 
   const activeFilterCount =
-    scopes.length + (startDate ? 1 : 0) + (endDate ? 1 : 0);
+    (keyword.trim().length > 0 ? 1 : 0) +
+    scopes.length +
+    (startDate ? 1 : 0) +
+    (endDate ? 1 : 0) +
+    (sortBy !== "created_at" ? 1 : 0) +
+    (sortOrder !== "desc" ? 1 : 0);
+
+  if (compact) {
+    return (
+      <div className="dropdown">
+        <div
+          tabIndex={0}
+          role="button"
+          className="btn btn-circle btn-sm btn-outline relative"
+          aria-label="Cari dan filter foto"
+        >
+          <SearchIcon />
+          {activeFilterCount > 0 && (
+            <span className="badge badge-primary badge-xs absolute -top-1 -right-1 px-1">
+              {activeFilterCount}
+            </span>
+          )}
+        </div>
+        <div
+          tabIndex={0}
+          className="dropdown-content z-20 mt-2 w-72 p-4 shadow border border-base-300 bg-base-100 rounded-box flex flex-col gap-4"
+        >
+          <div className="join">
+            <input
+              type="text"
+              value={keyword}
+              onChange={handleKeywordChange}
+              onKeyDown={handleKeywordKeyDown}
+              placeholder="Cari foto..."
+              className="input input-bordered input-sm join-item w-full"
+              aria-label="Cari foto"
+            />
+            <button
+              type="button"
+              onClick={handleSearchClick}
+              className="btn btn-sm btn-primary join-item"
+              aria-label="Cari"
+            >
+              <SearchIcon />
+            </button>
+          </div>
+
+          {scopeOptions.length > 0 && (
+            <div>
+              <p className="text-xs font-semibold mb-1">Cari di mana?</p>
+              <div className="flex flex-col gap-1">
+                {scopeOptions.map((option) => (
+                  <label
+                    key={option.value}
+                    className="label cursor-pointer justify-start gap-2 py-0.5"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={scopes.includes(option.value)}
+                      onChange={() => handleScopeToggle(option.value)}
+                      className="checkbox checkbox-xs"
+                    />
+                    <span className="label-text text-xs">{option.label}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div>
+            <p className="text-xs font-semibold mb-1">Rentang waktu</p>
+            <div className="flex flex-col gap-2">
+              <input
+                type="date"
+                value={startDate}
+                onChange={handleStartDateChange}
+                className="input input-bordered input-xs w-full"
+                aria-label="Dari tanggal"
+              />
+              <input
+                type="date"
+                value={endDate}
+                onChange={handleEndDateChange}
+                className="input input-bordered input-xs w-full"
+                aria-label="Sampai tanggal"
+              />
+            </div>
+          </div>
+
+          <div className="flex gap-2">
+            <select
+              value={sortBy}
+              onChange={handleSortByChange}
+              className="select select-bordered select-xs flex-1"
+              aria-label="Urutkan berdasarkan"
+            >
+              <option value="created_at">Waktu</option>
+              <option value="caption">Alfabet</option>
+            </select>
+            <select
+              value={sortOrder}
+              onChange={handleSortOrderChange}
+              className="select select-bordered select-xs flex-1"
+              aria-label="Arah urutan"
+            >
+              <option value="desc">Menurun</option>
+              <option value="asc">Menaik</option>
+            </select>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-3 w-full">
@@ -221,6 +394,7 @@ export default function SearchBar({
             className="btn btn-outline gap-2"
             aria-label="Filter pencarian lanjutan"
           >
+            <FilterIcon />
             Filter
             {activeFilterCount > 0 && (
               <span className="badge badge-primary badge-sm">
@@ -232,28 +406,30 @@ export default function SearchBar({
             tabIndex={0}
             className="dropdown-content z-20 mt-2 w-72 p-4 shadow border border-base-300 bg-base-100 rounded-box flex flex-col gap-4"
           >
-            <div>
-              <p className="text-sm font-semibold mb-2">Cari di mana?</p>
-              <div className="flex flex-col gap-1">
-                {SCOPE_OPTIONS.map((option) => (
-                  <label
-                    key={option.value}
-                    className="label cursor-pointer justify-start gap-2"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={scopes.includes(option.value)}
-                      onChange={() => handleScopeToggle(option.value)}
-                      className="checkbox checkbox-sm"
-                    />
-                    <span className="label-text">{option.label}</span>
-                  </label>
-                ))}
+            {scopeOptions.length > 0 && (
+              <div>
+                <p className="text-sm font-semibold mb-2">Cari di mana?</p>
+                <div className="flex flex-col gap-1">
+                  {scopeOptions.map((option) => (
+                    <label
+                      key={option.value}
+                      className="label cursor-pointer justify-start gap-2"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={scopes.includes(option.value)}
+                        onChange={() => handleScopeToggle(option.value)}
+                        className="checkbox checkbox-sm"
+                      />
+                      <span className="label-text">{option.label}</span>
+                    </label>
+                  ))}
+                </div>
+                <p className="text-xs text-base-content/50 mt-1">
+                  Kosongkan semua untuk mencari di seluruh lingkup.
+                </p>
               </div>
-              <p className="text-xs text-base-content/50 mt-1">
-                Kosongkan semua untuk mencari di seluruh lingkup.
-              </p>
-            </div>
+            )}
 
             <div>
               <p className="text-sm font-semibold mb-2">

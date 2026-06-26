@@ -5,8 +5,14 @@ import {
   type SortBy,
   type SortOrder,
 } from "@/lib/queries/public-photos";
+import {
+  sanitizePage,
+  sanitizePageSize,
+  computeRange,
+} from "@/lib/pagination";
 import SearchBar from "@/components/public/SearchBar";
 import PhotoGrid from "@/components/public/PhotoGrid";
+import PaginationControls from "@/components/shared/PaginationControls";
 
 interface HomePageProps {
   searchParams: Promise<{
@@ -16,6 +22,8 @@ interface HomePageProps {
     end?: string | string[];
     sortBy?: string | string[];
     sortOrder?: string | string[];
+    page?: string | string[];
+    pageSize?: string | string[];
   }>;
 }
 
@@ -60,6 +68,8 @@ export default async function HomePage({ searchParams }: HomePageProps) {
   const endDate = sanitizeDate(firstValue(resolved.end));
   const sortBy = sanitizeSortBy(firstValue(resolved.sortBy));
   const sortOrder = sanitizeSortOrder(firstValue(resolved.sortOrder));
+  const page = sanitizePage(firstValue(resolved.page));
+  const pageSize = sanitizePageSize(firstValue(resolved.pageSize));
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -78,15 +88,13 @@ export default async function HomePage({ searchParams }: HomePageProps) {
   }
 
   const supabase = await createClient();
+  const { from, to } = computeRange(page, pageSize);
+  const filters = { keyword, scopes, startDate, endDate, sortBy, sortOrder };
 
-  const { data: photos, error } = await buildPublicPhotosQuery(supabase, {
-    keyword,
-    scopes,
-    startDate,
-    endDate,
-    sortBy,
-    sortOrder,
-  });
+  const { data: photos, count, error } = await buildPublicPhotosQuery(
+    supabase,
+    { ...filters, from, to }
+  );
 
   if (error) {
     return (
@@ -99,11 +107,32 @@ export default async function HomePage({ searchParams }: HomePageProps) {
   }
 
   const photoList = photos ?? [];
+  const totalCount = count ?? 0;
   const isFiltering =
     keyword.length > 0 ||
     scopes.length > 0 ||
     startDate.length > 0 ||
     endDate.length > 0;
+
+  // Server Action inline: menutup variabel `filters` lewat closure
+  // sehingga klik "Load More" di browser selalu memakai filter & urutan
+  // yang sama dengan data yang sedang ditampilkan, tanpa perlu mengirim
+  // ulang seluruh state filter dari client ke server.
+  async function loadMorePublicPhotos(offset: number, limit: number) {
+    "use server";
+
+    const supabaseForAction = await createClient();
+    const { data, error: loadMoreErrorResult } = await buildPublicPhotosQuery(
+      supabaseForAction,
+      { ...filters, from: offset, to: offset + limit - 1 }
+    );
+
+    if (loadMoreErrorResult) {
+      return { items: [], error: loadMoreErrorResult.message };
+    }
+
+    return { items: data ?? [], error: null };
+  }
 
   return (
     <main className="container mx-auto px-4 py-10">
@@ -116,7 +145,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
         </p>
       </div>
 
-      <div className="max-w-2xl mx-auto mb-10">
+      <div className="max-w-2xl mx-auto mb-6">
         <SearchBar
           initialKeyword={keyword}
           initialScopes={scopes}
@@ -127,7 +156,17 @@ export default async function HomePage({ searchParams }: HomePageProps) {
         />
       </div>
 
-      <PhotoGrid photos={photoList} isFiltering={isFiltering} />
+      <PhotoGrid
+        photos={photoList}
+        totalCount={totalCount}
+        initialOffset={from}
+        isFiltering={isFiltering}
+        loadMoreAction={loadMorePublicPhotos}
+      />
+
+      {totalCount > 0 && (
+        <PaginationControls page={page} pageSize={pageSize} totalCount={totalCount} />
+      )}
     </main>
   );
 }
