@@ -32,6 +32,25 @@ export async function middleware(request: NextRequest) {
   // di Server Components dan Route Handlers.
   await supabase.auth.getUser();
 
+  // 1. Ambil data user
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  // 2. Tentukan rute yang butuh proteksi (contoh: /dashboard/*)
+  const isDashboardRoute = request.nextUrl.pathname.startsWith("/dashboard");
+
+  // 3. Jika belum login dan mencoba masuk ke rute dashboard, lempar ke /login
+  if (!user && isDashboardRoute) {
+    return NextResponse.redirect(new URL("/login", request.url));
+  }
+
+  // 4. (Opsional) Jika sudah login dan mencoba masuk ke /login atau /register,
+  // lempar ke /dashboard agar mereka tidak perlu login ulang.
+  if (user && (request.nextUrl.pathname === "/login" || request.nextUrl.pathname === "/register")) {
+    return NextResponse.redirect(new URL("/dashboard", request.url));
+  }
+
   return supabaseResponse;
 }
 
