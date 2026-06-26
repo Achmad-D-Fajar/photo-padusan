@@ -215,7 +215,7 @@ export default function PhotoGrid({
 
       <dialog className={`modal ${selectedPhoto ? "modal-open" : ""}`}>
         {selectedPhoto && (
-          <div className="modal-box max-w-2xl p-0 overflow-hidden">
+          <div className="modal-box max-w-2xl p-0 overflow-hidden flex flex-col max-h-[95vh]">
             <button
               type="button"
               onClick={closeModal}
@@ -225,12 +225,12 @@ export default function PhotoGrid({
               ✕
             </button>
 
-            <div className="bg-base-200">
+            <div className="bg-base-200 shrink-0">
               {selectedPhoto.thumbnail_url ? (
                 <img
                   src={selectedPhoto.thumbnail_url}
                   alt={selectedPhoto.caption || "Foto"}
-                  className="w-full max-h-[60vh] object-contain"
+                  className="w-full max-h-[40vh] md:max-h-[60vh] object-contain"
                 />
               ) : (
                 <div className="w-full h-64 flex items-center justify-center text-base-content/40 text-sm">
@@ -239,7 +239,7 @@ export default function PhotoGrid({
               )}
             </div>
 
-            <div className="p-6">
+            <div className="p-6 overflow-y-auto">
               <p className="text-base mb-2">
                 {selectedPhoto.caption || "Tanpa caption"}
               </p>
