@@ -162,19 +162,21 @@ export default async function PhotographerPage({
   return (
     <main className="container mx-auto px-4 py-10">
       <div className="flex flex-col items-center text-center mb-8 max-w-md mx-auto">
-        {profile.avatar_url ? (
-          <div className="avatar mb-4">
-            <div className="w-24 rounded-full">
-              <img src={profile.avatar_url} alt={displayLabel} />
-            </div>
+        <div className="avatar mb-4">
+          <div className="w-24 h-24 rounded-full overflow-hidden bg-neutral">
+            {profile.avatar_url ? (
+              <img
+                src={profile.avatar_url}
+                alt={displayLabel}
+                className="w-full h-full object-cover"
+              />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center text-neutral-content text-3xl">
+                {initial}
+              </div>
+            )}
           </div>
-        ) : (
-          <div className="avatar avatar-placeholder mb-4">
-            <div className="bg-neutral text-neutral-content w-24 rounded-full">
-              <span className="text-3xl">{initial}</span>
-            </div>
-          </div>
-        )}
+        </div>
 
         <h1 className="text-2xl font-bold">
           {profile.full_name || profile.display_name}

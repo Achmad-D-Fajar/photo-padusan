@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { Database } from "@/types/supabase";
+import AvatarUploader from "@/components/dashboard/AvatarUploader";
 
 type ProfileRow = Database["public"]["Tables"]["profiles"]["Row"];
 
@@ -17,6 +18,7 @@ interface ProfileFormProps {
     | "whatsapp"
     | "public_email"
     | "microstock_url"
+    | "avatar_url"
     | "created_at"
   >;
 }
@@ -63,8 +65,6 @@ export default function ProfileForm({
   userId,
   initialProfile,
 }: ProfileFormProps) {
-  // `confirmedFields` = state terakhir yang benar-benar tersimpan di server.
-  // Dipakai untuk deteksi perubahan (dirty check) dan rollback bila update gagal.
   const [confirmedFields, setConfirmedFields] = useState<FormFields>(() =>
     toFormFields(initialProfile)
   );
@@ -100,10 +100,7 @@ export default function ProfileForm({
   ): Partial<Record<keyof FormFields, string>> {
     const errors: Partial<Record<keyof FormFields, string>> = {};
 
-    if (
-      fields.whatsapp.length > 0 &&
-      !WHATSAPP_REGEX.test(fields.whatsapp)
-    ) {
+    if (fields.whatsapp.length > 0 && !WHATSAPP_REGEX.test(fields.whatsapp)) {
       errors.whatsapp =
         "Gunakan format internasional tanpa '+' atau '0' di depan, mis. 628123456789.";
     }
@@ -119,8 +116,7 @@ export default function ProfileForm({
       fields.microstock_url.length > 0 &&
       !URL_REGEX.test(fields.microstock_url)
     ) {
-      errors.microstock_url =
-        "URL harus diawali dengan http:// atau https://.";
+      errors.microstock_url = "URL harus diawali dengan http:// atau https://.";
     }
 
     if (fields.bio.length > BIO_MAX_LENGTH) {
@@ -156,8 +152,6 @@ export default function ProfileForm({
 
     const previousConfirmedFields = confirmedFields;
 
-    // Optimistic update: anggap perubahan sudah tersimpan agar form
-    // langsung terasa responsif (dirty state hilang, tombol disable).
     setConfirmedFields(trimmedFields);
     setFormFields(trimmedFields);
     setStatus("loading");
@@ -190,8 +184,6 @@ export default function ProfileForm({
       setStatus("success");
       setMessage("Profil berhasil diperbarui.");
     } catch (err) {
-      // Rollback optimistic state karena request gagal, tetapi pertahankan
-      // input yang sudah diketik user supaya tidak hilang dan bisa dicoba lagi.
       setConfirmedFields(previousConfirmedFields);
       setStatus("error");
       setMessage(
@@ -201,203 +193,212 @@ export default function ProfileForm({
   }
 
   return (
-    <form
-      onSubmit={handleSubmit}
-      className="card bg-base-100 border border-base-300 shadow-md"
-    >
+    <div className="card bg-base-100 border border-base-300 shadow-md">
       <div className="card-body gap-4">
-        <div className="form-control">
-          <label className="label" htmlFor="display_name">
-            <span className="label-text">Display Name</span>
-          </label>
-          <input
-            id="display_name"
-            type="text"
-            value={initialProfile.display_name}
-            className="input input-bordered w-full"
-            disabled
-            readOnly
-          />
-          <label className="label">
-            <span className="label-text-alt text-base-content/60">
-              Display Name tidak dapat diubah pada halaman ini.
-            </span>
-          </label>
-        </div>
+        <AvatarUploader
+          userId={userId}
+          initialAvatarUrl={initialProfile.avatar_url}
+          fallbackLabel={initialProfile.full_name || initialProfile.display_name}
+        />
 
-        <div className="form-control">
-          <label className="label" htmlFor="full_name">
-            <span className="label-text">Nama Lengkap</span>
-          </label>
-          <input
-            id="full_name"
-            type="text"
-            value={formFields.full_name}
-            onChange={(e) => handleChange("full_name", e.target.value)}
-            className={`input input-bordered w-full ${
-              fieldErrors.full_name ? "input-error" : ""
-            }`}
-            placeholder="Nama lengkap Anda"
-            maxLength={FULL_NAME_MAX_LENGTH}
-            disabled={isLoading}
-          />
-          {fieldErrors.full_name && (
+        <div className="divider my-0"></div>
+
+        {/*
+          `className="contents"` agar <form> tidak menambah box layout-nya
+          sendiri — anak-anaknya tetap mengikuti `gap-4` milik card-body,
+          sehingga jarak antar elemen tetap konsisten dengan AvatarUploader
+          di atasnya tanpa perlu restrukturisasi field yang sudah ada.
+        */}
+        <form onSubmit={handleSubmit} className="contents">
+          <div className="form-control">
+            <label className="label" htmlFor="display_name">
+              <span className="label-text">Display Name</span>
+            </label>
+            <input
+              id="display_name"
+              type="text"
+              value={initialProfile.display_name}
+              className="input input-bordered w-full"
+              disabled
+              readOnly
+            />
             <label className="label">
-              <span className="label-text-alt text-error">
-                {fieldErrors.full_name}
+              <span className="label-text-alt text-base-content/60">
+                Display Name tidak dapat diubah pada halaman ini.
               </span>
             </label>
-          )}
-        </div>
+          </div>
 
-        <div className="form-control">
-          <label className="label" htmlFor="bio">
-            <span className="label-text">Bio</span>
-          </label>
-          <textarea
-            id="bio"
-            value={formFields.bio}
-            onChange={(e) => handleChange("bio", e.target.value)}
-            className={`textarea textarea-bordered w-full ${
-              fieldErrors.bio ? "textarea-error" : ""
-            }`}
-            rows={4}
-            placeholder="Ceritakan sedikit tentang gaya fotografi Anda..."
-            maxLength={BIO_MAX_LENGTH}
-            disabled={isLoading}
-          />
-          <label className="label">
-            <span className="label-text-alt text-base-content/60">
-              {formFields.bio.length}/{BIO_MAX_LENGTH}
-            </span>
-            {fieldErrors.bio && (
-              <span className="label-text-alt text-error">
-                {fieldErrors.bio}
-              </span>
-            )}
-          </label>
-        </div>
-
-        <div className="form-control">
-          <label className="label" htmlFor="whatsapp">
-            <span className="label-text">Nomor WhatsApp</span>
-          </label>
-          <input
-            id="whatsapp"
-            type="text"
-            value={formFields.whatsapp}
-            onChange={(e) =>
-              handleChange("whatsapp", e.target.value.replace(/\D/g, ""))
-            }
-            className={`input input-bordered w-full ${
-              fieldErrors.whatsapp ? "input-error" : ""
-            }`}
-            placeholder="628123456789"
-            inputMode="numeric"
-            disabled={isLoading}
-          />
-          <label className="label">
-            <span className="label-text-alt text-base-content/60">
-              Format internasional tanpa &apos;+&apos;, mis. 628123456789.
-            </span>
-            {fieldErrors.whatsapp && (
-              <span className="label-text-alt text-error">
-                {fieldErrors.whatsapp}
-              </span>
-            )}
-          </label>
-        </div>
-
-        <div className="form-control">
-          <label className="label" htmlFor="public_email">
-            <span className="label-text">Email Publik</span>
-          </label>
-          <input
-            id="public_email"
-            type="email"
-            value={formFields.public_email}
-            onChange={(e) => handleChange("public_email", e.target.value)}
-            className={`input input-bordered w-full ${
-              fieldErrors.public_email ? "input-error" : ""
-            }`}
-            placeholder="kontak@contoh.com"
-            disabled={isLoading}
-          />
-          <label className="label">
-            <span className="label-text-alt text-base-content/60">
-              Ditampilkan publik di portofolio, boleh berbeda dari email login.
-            </span>
-            {fieldErrors.public_email && (
-              <span className="label-text-alt text-error">
-                {fieldErrors.public_email}
-              </span>
-            )}
-          </label>
-        </div>
-
-        <div className="form-control">
-          <label className="label" htmlFor="microstock_url">
-            <span className="label-text">URL Microstock</span>
-          </label>
-          <input
-            id="microstock_url"
-            type="url"
-            value={formFields.microstock_url}
-            onChange={(e) => handleChange("microstock_url", e.target.value)}
-            className={`input input-bordered w-full ${
-              fieldErrors.microstock_url ? "input-error" : ""
-            }`}
-            placeholder="https://www.shutterstock.com/g/namaanda"
-            disabled={isLoading}
-          />
-          {fieldErrors.microstock_url && (
-            <label className="label">
-              <span className="label-text-alt text-error">
-                {fieldErrors.microstock_url}
-              </span>
+          <div className="form-control">
+            <label className="label" htmlFor="full_name">
+              <span className="label-text">Nama Lengkap</span>
             </label>
-          )}
-        </div>
-
-        {status === "success" && (
-          <div role="alert" className="alert alert-success">
-            <span>{message}</span>
-          </div>
-        )}
-
-        {status === "error" && (
-          <div role="alert" className="alert alert-error">
-            <span>{message}</span>
-          </div>
-        )}
-
-        <div className="flex gap-2">
-          <button
-            type="submit"
-            className="btn btn-primary flex-1"
-            disabled={isLoading || !isDirty}
-          >
-            {isLoading ? (
-              <>
-                <span className="loading loading-spinner loading-sm"></span>
-                Menyimpan...
-              </>
-            ) : (
-              "Simpan Perubahan"
+            <input
+              id="full_name"
+              type="text"
+              value={formFields.full_name}
+              onChange={(e) => handleChange("full_name", e.target.value)}
+              className={`input input-bordered w-full ${
+                fieldErrors.full_name ? "input-error" : ""
+              }`}
+              placeholder="Nama lengkap Anda"
+              maxLength={FULL_NAME_MAX_LENGTH}
+              disabled={isLoading}
+            />
+            {fieldErrors.full_name && (
+              <label className="label">
+                <span className="label-text-alt text-error">
+                  {fieldErrors.full_name}
+                </span>
+              </label>
             )}
-          </button>
+          </div>
 
-          {isDirty && !isLoading && (
+          <div className="form-control">
+            <label className="label" htmlFor="bio">
+              <span className="label-text">Bio</span>
+            </label>
+            <textarea
+              id="bio"
+              value={formFields.bio}
+              onChange={(e) => handleChange("bio", e.target.value)}
+              className={`textarea textarea-bordered w-full ${
+                fieldErrors.bio ? "textarea-error" : ""
+              }`}
+              rows={4}
+              placeholder="Ceritakan sedikit tentang gaya fotografi Anda..."
+              maxLength={BIO_MAX_LENGTH}
+              disabled={isLoading}
+            />
+            <label className="label">
+              <span className="label-text-alt text-base-content/60">
+                {formFields.bio.length}/{BIO_MAX_LENGTH}
+              </span>
+              {fieldErrors.bio && (
+                <span className="label-text-alt text-error">
+                  {fieldErrors.bio}
+                </span>
+              )}
+            </label>
+          </div>
+
+          <div className="form-control">
+            <label className="label" htmlFor="whatsapp">
+              <span className="label-text">Nomor WhatsApp</span>
+            </label>
+            <input
+              id="whatsapp"
+              type="text"
+              value={formFields.whatsapp}
+              onChange={(e) =>
+                handleChange("whatsapp", e.target.value.replace(/\D/g, ""))
+              }
+              className={`input input-bordered w-full ${
+                fieldErrors.whatsapp ? "input-error" : ""
+              }`}
+              placeholder="628123456789"
+              inputMode="numeric"
+              disabled={isLoading}
+            />
+            <label className="label">
+              <span className="label-text-alt text-base-content/60">
+                Format internasional tanpa &apos;+&apos;, mis. 628123456789.
+              </span>
+              {fieldErrors.whatsapp && (
+                <span className="label-text-alt text-error">
+                  {fieldErrors.whatsapp}
+                </span>
+              )}
+            </label>
+          </div>
+
+          <div className="form-control">
+            <label className="label" htmlFor="public_email">
+              <span className="label-text">Email Publik</span>
+            </label>
+            <input
+              id="public_email"
+              type="email"
+              value={formFields.public_email}
+              onChange={(e) => handleChange("public_email", e.target.value)}
+              className={`input input-bordered w-full ${
+                fieldErrors.public_email ? "input-error" : ""
+              }`}
+              placeholder="kontak@contoh.com"
+              disabled={isLoading}
+            />
+            <label className="label">
+              <span className="label-text-alt text-base-content/60">
+                Ditampilkan publik di portofolio, boleh berbeda dari email login.
+              </span>
+              {fieldErrors.public_email && (
+                <span className="label-text-alt text-error">
+                  {fieldErrors.public_email}
+                </span>
+              )}
+            </label>
+          </div>
+
+          <div className="form-control">
+            <label className="label" htmlFor="microstock_url">
+              <span className="label-text">URL Microstock</span>
+            </label>
+            <input
+              id="microstock_url"
+              type="url"
+              value={formFields.microstock_url}
+              onChange={(e) => handleChange("microstock_url", e.target.value)}
+              className={`input input-bordered w-full ${
+                fieldErrors.microstock_url ? "input-error" : ""
+              }`}
+              placeholder="https://www.shutterstock.com/g/namaanda"
+              disabled={isLoading}
+            />
+            {fieldErrors.microstock_url && (
+              <label className="label">
+                <span className="label-text-alt text-error">
+                  {fieldErrors.microstock_url}
+                </span>
+              </label>
+            )}
+          </div>
+
+          {status === "success" && (
+            <div role="alert" className="alert alert-success">
+              <span>{message}</span>
+            </div>
+          )}
+
+          {status === "error" && (
+            <div role="alert" className="alert alert-error">
+              <span>{message}</span>
+            </div>
+          )}
+
+          <div className="flex gap-2">
             <button
-              type="button"
-              onClick={handleReset}
-              className="btn btn-ghost"
+              type="submit"
+              className="btn btn-primary flex-1"
+              disabled={isLoading || !isDirty}
             >
-              Batalkan
+              {isLoading ? (
+                <>
+                  <span className="loading loading-spinner loading-sm"></span>
+                  Menyimpan...
+                </>
+              ) : (
+                "Simpan Perubahan"
+              )}
             </button>
-          )}
-        </div>
+
+            {isDirty && !isLoading && (
+              <button type="button" onClick={handleReset} className="btn btn-ghost">
+                Batalkan
+              </button>
+            )}
+          </div>
+        </form>
       </div>
-    </form>
+    </div>
   );
 }

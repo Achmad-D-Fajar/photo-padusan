@@ -120,23 +120,33 @@ export default async function Navbar() {
       <div className="navbar-end gap-2">
         {user ? (
           <div className="dropdown dropdown-end">
+            {/*
+              FIX Masalah 1: ukuran (w-10 h-10, bukan cuma w-10),
+              overflow-hidden, dan object-cover diset secara EKSPLISIT —
+              tidak mengandalkan class `avatar`/`avatar-placeholder`
+              DaisyUI sendirian, yang sebelumnya menyebabkan avatar
+              terlihat terpotong/tidak rata saat dipasangkan dengan
+              btn-circle.
+            */}
             <div
               tabIndex={0}
               role="button"
-              className="btn btn-ghost btn-circle avatar"
+              className="btn btn-ghost btn-circle avatar p-0 overflow-hidden"
               aria-label="Menu pengguna"
             >
-              {avatarUrl ? (
-                <div className="w-10 rounded-full">
-                  <img src={avatarUrl} alt={avatarLabel} />
-                </div>
-              ) : (
-                <div className="avatar avatar-placeholder">
-                  <div className="bg-neutral text-neutral-content w-10 rounded-full">
+              <div className="w-10 h-10 rounded-full overflow-hidden">
+                {avatarUrl ? (
+                  <img
+                    src={avatarUrl}
+                    alt={avatarLabel}
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <div className="w-full h-full bg-neutral text-neutral-content flex items-center justify-center">
                     <span className="text-sm">{avatarInitial}</span>
                   </div>
-                </div>
-              )}
+                )}
+              </div>
             </div>
             <ul
               tabIndex={0}
