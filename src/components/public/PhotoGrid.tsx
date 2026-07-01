@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import type { PublicPhotoItem } from "@/lib/queries/public-photos";
 import { LOAD_MORE_INCREMENT } from "@/lib/pagination";
+import ProtectedImage from "@/components/shared/ProtectedImage";
+import { usePreventSave } from "@/hooks/usePreventSave";
 
 interface LoadMoreResult {
   items: PublicPhotoItem[];
@@ -13,16 +15,9 @@ interface LoadMoreResult {
 interface PhotoGridProps {
   photos: PublicPhotoItem[];
   totalCount: number;
-  // Offset absolut dari halaman yang sedang ditampilkan (hasil
-  // computeRange di server). WAJIB agar "Load More" menghitung offset
-  // selanjutnya dengan benar saat user sudah berada di halaman 2+ —
-  // tanpa ini, Load More akan salah mengambil ulang item dari awal data.
   initialOffset: number;
   isFiltering: boolean;
-  loadMoreAction?: (
-    offset: number,
-    limit: number
-  ) => Promise<LoadMoreResult>;
+  loadMoreAction?: (offset: number, limit: number) => Promise<LoadMoreResult>;
 }
 
 function getPhotographerLabel(photo: PublicPhotoItem): string {
@@ -51,16 +46,15 @@ export default function PhotoGrid({
   isFiltering,
   loadMoreAction,
 }: PhotoGridProps) {
+  // Ctrl+S / Cmd+S / Ctrl+P pencegahan aktif saat komponen ini mounted
+  // (yaitu hanya di halaman yang menampilkan galeri publik).
+  usePreventSave();
+
   const [items, setItems] = useState<PublicPhotoItem[]>(photos);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [loadMoreError, setLoadMoreError] = useState("");
-  const [selectedPhoto, setSelectedPhoto] = useState<PublicPhotoItem | null>(
-    null
-  );
+  const [selectedPhoto, setSelectedPhoto] = useState<PublicPhotoItem | null>(null);
 
-  // Setiap kali server merender ulang (ganti halaman, ganti filter, dsb.),
-  // `photos` selalu berupa array baru — reset akumulasi "Load More" agar
-  // tidak tercampur dengan data dari konteks/filter sebelumnya.
   useEffect(() => {
     setItems(photos);
     setLoadMoreError("");
@@ -147,13 +141,13 @@ export default function PhotoGrid({
                 type="button"
                 onClick={() => setSelectedPhoto(photo)}
                 className="block w-full text-left cursor-pointer"
-                aria-label={`Lihat detail foto: ${
-                  photo.caption || "Tanpa caption"
-                }`}
+                aria-label={`Lihat detail foto: ${photo.caption || "Tanpa caption"}`}
               >
                 <figure className="aspect-square overflow-hidden bg-base-200">
                   {photo.thumbnail_url ? (
-                    <img
+                    // ProtectedImage menggantikan <img> biasa.
+                    // Klik masih berfungsi normal (diteruskan ke button wrapper).
+                    <ProtectedImage
                       src={photo.thumbnail_url}
                       alt={photo.caption || "Foto"}
                       className="w-full h-full object-cover transition-transform hover:scale-105"
@@ -215,7 +209,7 @@ export default function PhotoGrid({
 
       <dialog className={`modal ${selectedPhoto ? "modal-open" : ""}`}>
         {selectedPhoto && (
-          <div className="modal-box max-w-2xl p-0 overflow-hidden flex flex-col max-h-[95vh]">
+          <div className="modal-box max-w-2xl p-0 overflow-hidden">
             <button
               type="button"
               onClick={closeModal}
@@ -225,12 +219,12 @@ export default function PhotoGrid({
               ✕
             </button>
 
-            <div className="bg-base-200 shrink-0">
+            <div className="bg-base-200">
               {selectedPhoto.thumbnail_url ? (
-                <img
+                <ProtectedImage
                   src={selectedPhoto.thumbnail_url}
                   alt={selectedPhoto.caption || "Foto"}
-                  className="w-full max-h-[40vh] md:max-h-[60vh] object-contain"
+                  className="w-full max-h-[60vh] object-contain"
                 />
               ) : (
                 <div className="w-full h-64 flex items-center justify-center text-base-content/40 text-sm">
@@ -239,7 +233,7 @@ export default function PhotoGrid({
               )}
             </div>
 
-            <div className="p-6 overflow-y-auto">
+            <div className="p-6">
               <p className="text-base mb-2">
                 {selectedPhoto.caption || "Tanpa caption"}
               </p>

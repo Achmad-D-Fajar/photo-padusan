@@ -1,5 +1,7 @@
 // next.config.ts
-const nextConfig = {
+import type { NextConfig } from "next";
+
+const nextConfig: NextConfig = {
   images: {
     remotePatterns: [
       {
@@ -9,4 +11,11 @@ const nextConfig = {
       },
     ],
   },
+  // Sharp adalah native Node.js module (menggunakan binary C++).
+  // Tanpa ini, Next.js akan mencoba mem-bundle Sharp ke dalam
+  // worker yang tidak mendukung native modules, menyebabkan error
+  // "Cannot find module sharp" saat runtime.
+  serverExternalPackages: ["sharp"],
 };
+
+export default nextConfig;

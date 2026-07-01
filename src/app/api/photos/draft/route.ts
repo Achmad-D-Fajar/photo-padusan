@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { processImageForStorage } from "@/lib/server/image-processing";
 
 export const runtime = "nodejs";
 
-const MAX_FILE_SIZE = 3 * 1024 * 1024;
+const MAX_UPLOAD_SIZE = 20 * 1024 * 1024; // 20MB (sebelum kompresi)
 const MAX_DESCRIPTION_LENGTH = 300;
 
 interface GeminiResult {
@@ -38,18 +39,21 @@ function parseGeminiResponse(text: string): GeminiResult {
 }
 
 function buildPrompt(description: string | null): string {
+  const baseInstructions = 
+    "Act as an expert microstock photography contributor. Analyze this image to generate highly commercial, discoverable metadata in English. " +
+    "Return strictly a valid JSON object without markdown formatting, using the exact keys 'caption' and 'tags'. " +
+    "1. 'caption' (string): A descriptive, literal, and searchable title (5 to 15 words). Focus on the main subject, action, setting, lighting, and mood. Do not use brand names, camera settings, or subjective opinions. " +
+    "2. 'tags' (array of strings): An array of 30 highly relevant keywords ordered by visual importance. Include both literal descriptions (e.g., 'laptop', 'coffee') and conceptual terms (e.g., 'technology', 'lifestyle'). Use single words or short phrases.";
+
   if (description && description.trim().length > 0) {
-    const safeDescription = description.trim().slice(0, MAX_DESCRIPTION_LENGTH);
-    return `Analyze this image together with the following user-provided context: "${safeDescription}". Use both the visual content of the image and this context to inform your answer. Return strictly a JSON object with 'caption' (string) and 'tags' (array of 5 strings).`;
+    const safe = description.trim().slice(0, MAX_DESCRIPTION_LENGTH);
+    return (
+      `${baseInstructions} ` +
+      `Incorporate the following user context to refine your analysis if it visually matches the image: "${safe}".`
+    );
   }
-
-  return "Analyze this image. Return strictly a JSON object with 'caption' (string) and 'tags' (array of 5 strings).";
-}
-
-function extensionFromMimeType(mimeType: string): string {
-  if (mimeType === "image/webp") return "webp";
-  if (mimeType === "image/png") return "png";
-  return "jpg";
+  
+  return baseInstructions;
 }
 
 export async function POST(request: NextRequest) {
@@ -89,12 +93,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (file.size > MAX_FILE_SIZE) {
+    if (file.size > MAX_UPLOAD_SIZE) {
       return NextResponse.json(
-        {
-          success: false,
-          error: "Ukuran file terlalu besar. Pastikan kompresi berjalan dengan benar.",
-        },
+        { success: false, error: "Ukuran file terlalu besar (maks. 20MB)." },
         { status: 400 }
       );
     }
@@ -106,50 +107,70 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const arrayBuffer = await file.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
+    // Konversi File → ArrayBuffer → Buffer (wajib di Node runtime;
+    // lihat catatan di draft route awal percakapan ini).
+    const rawBuffer = Buffer.from(await file.arrayBuffer());
 
-    // Blok Gemini diaktifkan
-    let analysis: GeminiResult;
+    // Proses gambar: downscale ke 1080px + watermark permanen.
+    // Memisahkan downscaledBuffer (untuk Gemini) dan watermarkedBuffer
+    // (untuk Storage) memastikan AI menganalisis gambar bersih tanpa
+    // teks watermark yang bisa membingungkan caption/tags generation.
+    let processingResult;
+    try {
+      processingResult = await processImageForStorage(rawBuffer, {
+        watermarkText: "© Etalase Padusan",
+      });
+    } catch (sharpError) {
+      console.error("Image processing failed:", sharpError);
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Gagal memproses gambar. Pastikan file tidak rusak.",
+        },
+        { status: 422 }
+      );
+    }
+
+    const { downscaledBuffer, watermarkedBuffer } = processingResult;
+
+    // Kirim gambar DOWNSCALED (tanpa watermark) ke Gemini untuk analisis.
+    let analysis: GeminiResult = { caption: "Tanpa judul", tags: [] };
 
     try {
       const genAI = new GoogleGenerativeAI(geminiApiKey);
-      // Menggunakan model flash terbaru untuk respons yang cepat dan efisien
       const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
-
-      const base64Data = buffer.toString("base64");
-      const promptText = buildPrompt(description);
 
       const result = await model.generateContent([
         {
           inlineData: {
-            data: base64Data,
-            mimeType: file.type,
+            // Setelah Sharp memproses, output selalu JPEG.
+            data: downscaledBuffer.toString("base64"),
+            mimeType: "image/jpeg",
           },
         },
-        { text: promptText },
+        { text: buildPrompt(description) },
       ]);
 
-      const responseText = result.response.text();
-      analysis = parseGeminiResponse(responseText);
+      analysis = parseGeminiResponse(result.response.text());
     } catch (geminiError) {
       console.error("Gemini analysis failed:", geminiError);
       return NextResponse.json(
         {
           success: false,
-          error: "Gagal menganalisis gambar dengan AI. Silakan periksa limit kuota atau coba lagi.",
+          error: "Gagal menganalisis gambar dengan AI. Silakan coba lagi.",
         },
         { status: 502 }
       );
     }
 
-    const fileExtension = extensionFromMimeType(file.type);
-    const fileName = `${user.id}/${crypto.randomUUID()}.${fileExtension}`;
+    // Upload gambar WATERMARKED ke Storage.
+    // Path diawali user.id agar sesuai storage RLS policy.
+    const fileName = `${user.id}/${crypto.randomUUID()}.jpg`;
 
     const { error: uploadError } = await supabase.storage
       .from("thumbnails")
-      .upload(fileName, buffer, {
-        contentType: file.type,
+      .upload(fileName, watermarkedBuffer, {
+        contentType: "image/jpeg",
         upsert: false,
       });
 
@@ -179,6 +200,7 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (insertError) {
+      // Rollback Storage agar tidak ada file yatim.
       await supabase.storage.from("thumbnails").remove([fileName]);
 
       return NextResponse.json(
