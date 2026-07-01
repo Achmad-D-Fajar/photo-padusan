@@ -167,10 +167,13 @@ export async function POST(request: NextRequest) {
     // Path diawali user.id agar sesuai storage RLS policy.
     const fileName = `${user.id}/${crypto.randomUUID()}.jpg`;
 
-// 1. Konversi Node Buffer menjadi Uint8Array standar, lalu bungkus dengan Web Blob
-    const uploadBlob = new Blob([new Uint8Array(watermarkedBuffer)], { type: "image/jpeg" });
+    // VERIFIKASI SEBELUM UPLOAD
+    console.log("Watermarked buffer size:", watermarkedBuffer.length, "bytes");
 
-    // 2. Gunakan uploadBlob sebagai payload unggahan
+    // Gunakan Uint8Array agar kompatibel dengan Blob
+    const uint8Array = new Uint8Array(watermarkedBuffer);
+    const uploadBlob = new Blob([uint8Array], { type: "image/jpeg" });
+
     const { error: uploadError } = await supabase.storage
       .from("thumbnails")
       .upload(fileName, uploadBlob, {
@@ -179,10 +182,8 @@ export async function POST(request: NextRequest) {
       });
 
     if (uploadError) {
-      return NextResponse.json(
-        { success: false, error: `Gagal mengunggah gambar: ${uploadError.message}` },
-        { status: 500 }
-      );
+        console.error("Upload error details:", uploadError);
+        throw uploadError;
     }
 
     const { data: publicUrlData } = supabase.storage
