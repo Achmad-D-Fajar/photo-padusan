@@ -137,15 +137,15 @@ export async function processImageForStorage(
   const watermarkSvg = buildWatermarkSvg(finalWidth, finalHeight, watermarkText);
 
   const watermarkedBuffer = await sharp(downscaledBuffer)
-    .composite([
-      {
-        input: watermarkSvg,
-        // "over" = layer watermark di atas gambar menggunakan alpha blending.
-        blend: "over",
-      },
-    ])
-    .jpeg({ quality: jpegQuality, progressive: true, mozjpeg: true })
-    .toBuffer();
+  .composite([
+    {
+      input: "./public/watermark.png", // Pastikan file ini ada di proyek Anda
+      tile: true, // Mengulang pola secara otomatis
+      blend: "over",
+    },
+  ])
+  .jpeg({ quality: 80 })
+  .toBuffer();
 
   return {
     downscaledBuffer,
