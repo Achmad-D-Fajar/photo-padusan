@@ -141,13 +141,33 @@ export async function processImageForStorage(
   // Buffer ini yang diunggah ke Supabase Storage.
   const watermarkSvg = buildWatermarkSvg(finalWidth, finalHeight, watermarkText);
 
-  const watermarkPath = path.join(process.cwd(), "watermark.png");
+  // 1. Load watermark sebagai instance sharp terpisah
+const watermarkPath = path.join(process.cwd(), "watermark.png");
+
+// 2. Dapatkan metadata watermark
+const watermarkSharp = sharp(watermarkPath);
+const wMetadata = await watermarkSharp.metadata();
+
+// 3. Resize watermark agar maksimal 50% dari lebar gambar utama (opsional)
+// atau setidaknya pasti lebih kecil dari dimensi gambar utama
+const resizedWatermark = await watermarkSharp
+  .resize({
+    width: Math.round(finalWidth * 0.8), // Watermark 80% dari lebar foto
+    fit: 'inside', // Memastikan tidak melampaui dimensi foto
+  })
+  .toBuffer();
 
 console.log("Mulai proses composite watermark...");
 
 const watermarkedBuffer = await sharp(downscaledBuffer)
-  .composite([{ input: watermarkPath, tile: true, blend: "over" }])
-  .jpeg({ quality: 80 })
+  .composite([
+    {
+      input: resizedWatermark,
+      tile: true, // Tetap gunakan tile agar menutupi seluruh gambar
+      blend: "over",
+    },
+  ])
+  .jpeg({ quality: 80, progressive: true, mozjpeg: true })
   .toBuffer();
 
 console.log("Selesai composite. Ukuran final:", watermarkedBuffer.length);
