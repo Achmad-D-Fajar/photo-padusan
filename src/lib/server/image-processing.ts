@@ -122,6 +122,7 @@ export async function processImageForStorage(
   const finalWidth = Math.round(width * scale);
   const finalHeight = Math.round(height * scale);
 
+  
   // Tahap 1: downscale saja (tanpa watermark).
   // Buffer ini dikirim ke Gemini agar AI menganalisis gambar bersih.
   const downscaledBuffer = await sharp(inputBuffer)
@@ -131,6 +132,9 @@ export async function processImageForStorage(
       withoutEnlargement: true,
     })
     .jpeg({ quality: jpegQuality, progressive: true, mozjpeg: true })
+    
+    
+    
     .toBuffer();
 
   // Tahap 2: tambahkan watermark ke buffer downscaled.
@@ -139,16 +143,14 @@ export async function processImageForStorage(
 
   const watermarkPath = path.join(process.cwd(), "watermark.png");
 
+console.log("Mulai proses composite watermark...");
+
 const watermarkedBuffer = await sharp(downscaledBuffer)
-  .composite([
-    {
-      input: watermarkPath,
-      tile: true,
-      blend: "over",
-    },
-  ])
+  .composite([{ input: watermarkPath, tile: true, blend: "over" }])
   .jpeg({ quality: 80 })
   .toBuffer();
+
+console.log("Selesai composite. Ukuran final:", watermarkedBuffer.length);
 
   return {
     downscaledBuffer,
