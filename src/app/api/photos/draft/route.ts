@@ -167,9 +167,13 @@ export async function POST(request: NextRequest) {
     // Path diawali user.id agar sesuai storage RLS policy.
     const fileName = `${user.id}/${crypto.randomUUID()}.jpg`;
 
+// 1. Konversi Node Buffer menjadi Uint8Array standar, lalu bungkus dengan Web Blob
+    const uploadBlob = new Blob([new Uint8Array(watermarkedBuffer)], { type: "image/jpeg" });
+
+    // 2. Gunakan uploadBlob sebagai payload unggahan
     const { error: uploadError } = await supabase.storage
       .from("thumbnails")
-      .upload(fileName, watermarkedBuffer, {
+      .upload(fileName, uploadBlob, {
         contentType: "image/jpeg",
         upsert: false,
       });
