@@ -3,6 +3,7 @@
 // Sharp adalah native Node.js module dan tidak bisa dipakai di browser.
 
 import sharp from "sharp";
+import path from "path";
 
 export interface ProcessImageResult {
   downscaledBuffer: Buffer;   // Sebelum watermark — untuk Gemini
@@ -136,11 +137,13 @@ export async function processImageForStorage(
   // Buffer ini yang diunggah ke Supabase Storage.
   const watermarkSvg = buildWatermarkSvg(finalWidth, finalHeight, watermarkText);
 
-  const watermarkedBuffer = await sharp(downscaledBuffer)
+  const watermarkPath = path.join(process.cwd(), "watermark.png");
+
+const watermarkedBuffer = await sharp(downscaledBuffer)
   .composite([
     {
-      input: "./public/watermark.png", // Pastikan file ini ada di proyek Anda
-      tile: true, // Mengulang pola secara otomatis
+      input: watermarkPath,
+      tile: true,
       blend: "over",
     },
   ])
