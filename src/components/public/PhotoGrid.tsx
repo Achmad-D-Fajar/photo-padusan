@@ -147,9 +147,9 @@ export default function PhotoGrid({
                   {photo.thumbnail_url ? (
                     // ProtectedImage menggantikan <img> biasa.
                     // Klik masih berfungsi normal (diteruskan ke button wrapper).
-                    <ProtectedImage 
-                      src={`${photo.thumbnail_url}?v=${Date.now()}`} // <--- Tambahkan ?v=...
-                      alt={photo.caption}
+                    <ProtectedImage
+                      src={photo.thumbnail_url}
+                      alt={photo.caption || "Foto"}
                       className="w-full h-full object-cover transition-transform hover:scale-105"
                     />
                   ) : (
@@ -222,7 +222,7 @@ export default function PhotoGrid({
             <div className="bg-base-200">
               {selectedPhoto.thumbnail_url ? (
                 <ProtectedImage
-                  src={`${selectedPhoto.thumbnail_url}?v=${Date.now()}`}
+                  src={selectedPhoto.thumbnail_url}
                   alt={selectedPhoto.caption || "Foto"}
                   className="w-full max-h-[60vh] object-contain"
                 />

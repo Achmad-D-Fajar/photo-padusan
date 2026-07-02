@@ -38,22 +38,22 @@ function parseGeminiResponse(text: string): GeminiResult {
   return { caption, tags };
 }
 
-function buildPrompt(description: string | null): string {
-  const baseInstructions = 
-    "Act as an expert microstock photography contributor. Analyze this image to generate highly commercial, discoverable metadata in English. " +
-    "Return strictly a valid JSON object without markdown formatting, using the exact keys 'caption' and 'tags'. " +
-    "1. 'caption' (string): A descriptive, literal, and searchable title (5 to 15 words). Focus on the main subject, action, setting, lighting, and mood. Do not use brand names, camera settings, or subjective opinions. " +
-    "2. 'tags' (array of strings): An array of 30 highly relevant keywords ordered by visual importance. Include both literal descriptions (e.g., 'laptop', 'coffee') and conceptual terms (e.g., 'technology', 'lifestyle'). Use single words or short phrases.";
+const MICROSTOCK_BASE_PROMPT = 
+  "Act as an expert microstock photography contributor. Analyze this image to generate highly commercial, discoverable metadata in English. " +
+  "Return strictly a valid JSON object without markdown formatting, using the exact keys 'caption' and 'tags'. " +
+  "1. 'caption' (string): A descriptive, literal, and searchable title (5 to 15 words). Focus on the main subject, action, setting, lighting, and mood. Do not use brand names, camera settings, or subjective opinions. " +
+  "2. 'tags' (array of strings): An array of exactly 30 highly relevant keywords ordered by visual importance. Include literal descriptions (e.g., 'laptop', 'coffee') and conceptual terms (e.g., 'technology', 'lifestyle'). Use single words or short phrases.";
 
+export function buildPrompt(description: string | null): string {
   if (description && description.trim().length > 0) {
-    const safe = description.trim().slice(0, MAX_DESCRIPTION_LENGTH);
+    const safe = description.trim().slice(0, 500); // Replaced MAX_DESCRIPTION_LENGTH with a hard limit for safety
     return (
-      `${baseInstructions} ` +
-      `Incorporate the following user context to refine your analysis if it visually matches the image: "${safe}".`
+      `${MICROSTOCK_BASE_PROMPT} ` +
+      `Integrate the following user context to ensure accuracy regarding locations, specific objects, or intended themes: "${safe}".`
     );
   }
   
-  return baseInstructions;
+  return MICROSTOCK_BASE_PROMPT;
 }
 
 export async function POST(request: NextRequest) {
@@ -118,7 +118,7 @@ export async function POST(request: NextRequest) {
     let processingResult;
     try {
       processingResult = await processImageForStorage(rawBuffer, {
-        watermarkText: "© Etalase Padusan",
+        watermarkText: "Desa Padusan",
       });
     } catch (sharpError) {
       console.error("Image processing failed:", sharpError);
@@ -167,23 +167,18 @@ export async function POST(request: NextRequest) {
     // Path diawali user.id agar sesuai storage RLS policy.
     const fileName = `${user.id}/${crypto.randomUUID()}.jpg`;
 
-    // VERIFIKASI SEBELUM UPLOAD
-    console.log("Watermarked buffer size:", watermarkedBuffer.length, "bytes");
-
-    // Gunakan Uint8Array agar kompatibel dengan Blob
-    const uint8Array = new Uint8Array(watermarkedBuffer);
-    const uploadBlob = new Blob([uint8Array], { type: "image/jpeg" });
-
     const { error: uploadError } = await supabase.storage
       .from("thumbnails")
-      .upload(fileName, uploadBlob, {
+      .upload(fileName, watermarkedBuffer, {
         contentType: "image/jpeg",
         upsert: false,
       });
 
     if (uploadError) {
-        console.error("Upload error details:", uploadError);
-        throw uploadError;
+      return NextResponse.json(
+        { success: false, error: `Gagal mengunggah gambar: ${uploadError.message}` },
+        { status: 500 }
+      );
     }
 
     const { data: publicUrlData } = supabase.storage
