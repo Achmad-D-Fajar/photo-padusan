@@ -145,6 +145,12 @@ export async function POST(request: NextRequest) {
 
     const { downscaledBuffer, watermarkedBuffer } = processingResult;
 
+    const watermarkApplied = Buffer.compare(downscaledBuffer, watermarkedBuffer) !== 0;
+      console.log("[draft] watermark applied:", watermarkApplied, {
+        downscaledBytes: downscaledBuffer.length,
+        watermarkedBytes: watermarkedBuffer.length,
+      });
+
     // 2. Gemini: send CLEAN (non-watermarked) buffer for analysis
     let analysis: GeminiResult = { caption: "Tanpa judul", tags: [] };
 
