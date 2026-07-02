@@ -45,7 +45,7 @@ function buildWatermarkSvg(
       const x = (cx + col * spacingX + stagger).toFixed(1);
       const y = (cy + row * spacingY).toFixed(1);
       const attrs =
-        `font-size="${fontSize}" font-family="Arial,Helvetica,sans-serif"` +
+        `font-size="${fontSize}" font-family="sans-serif"` +
         ` font-weight="bold" text-anchor="middle" dominant-baseline="middle"`;
       textNodes.push(
         `<text x="${x}" y="${y}" ${attrs} fill="black" fill-opacity="0.12">${text}</text>`,
