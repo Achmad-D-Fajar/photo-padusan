@@ -17,7 +17,7 @@ interface ProcessOptions {
 const DEFAULTS: Required<ProcessOptions> = {
   maxLongestSidePx: 1080,
   jpegQuality: 80,
-  watermarkText: "© Etalase Padusan",
+  watermarkText: "Desa Padusan",
 };
 
 function buildWatermarkSvg(
