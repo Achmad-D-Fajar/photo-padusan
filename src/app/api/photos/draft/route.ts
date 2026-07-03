@@ -132,9 +132,7 @@ export async function POST(request: NextRequest) {
     // 1. Downscale + watermark (Sharp)
     let processingResult;
     try {
-      processingResult = await processImageForStorage(rawBuffer, {
-        watermarkText: `${artistName} - Desa Padusan`,
-      });
+      processingResult = await processImageForStorage(rawBuffer);
     } catch (sharpError) {
       console.error("Image processing failed:", sharpError);
       return NextResponse.json(
