@@ -31,14 +31,6 @@ function getPhotographerHref(photo: PublicPhotoItem): string {
   return `/photographer/${photo.display_name}`;
 }
 
-function formatUploadDate(isoDate: string): string {
-  return new Date(isoDate).toLocaleDateString("id-ID", {
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-  });
-}
-
 export default function PhotoGrid({
   photos,
   totalCount,
@@ -46,36 +38,17 @@ export default function PhotoGrid({
   isFiltering,
   loadMoreAction,
 }: PhotoGridProps) {
-  // Ctrl+S / Cmd+S / Ctrl+P pencegahan aktif saat komponen ini mounted
-  // (yaitu hanya di halaman yang menampilkan galeri publik).
+  // Ctrl+S / Cmd+S / Ctrl+P pencegahan aktif
   usePreventSave();
 
   const [items, setItems] = useState<PublicPhotoItem[]>(photos);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [loadMoreError, setLoadMoreError] = useState("");
-  const [selectedPhoto, setSelectedPhoto] = useState<PublicPhotoItem | null>(null);
 
   useEffect(() => {
     setItems(photos);
     setLoadMoreError("");
   }, [photos, initialOffset]);
-
-  function closeModal() {
-    setSelectedPhoto(null);
-  }
-
-  useEffect(() => {
-    if (!selectedPhoto) return;
-
-    function handleKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") {
-        closeModal();
-      }
-    }
-
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [selectedPhoto]);
 
   const remainingCount = totalCount - (initialOffset + items.length);
   const hasMore = remainingCount > 0;
@@ -137,16 +110,15 @@ export default function PhotoGrid({
               key={photo.id}
               className="card bg-base-100 shadow-md border border-base-300 overflow-hidden"
             >
-              <button
-                type="button"
-                onClick={() => setSelectedPhoto(photo)}
+              {/* BUTTON DIGANTI MENJADI LINK. scroll={false} mencegah halaman lompat ke atas */}
+              <Link
+                href={`/photo/${photo.id}`}
+                scroll={false}
                 className="block w-full text-left cursor-pointer"
                 aria-label={`Lihat detail foto: ${photo.caption || "Tanpa caption"}`}
               >
                 <figure className="aspect-square overflow-hidden bg-base-200">
                   {photo.thumbnail_url ? (
-                    // ProtectedImage menggantikan <img> biasa.
-                    // Klik masih berfungsi normal (diteruskan ke button wrapper).
                     <ProtectedImage
                       src={photo.thumbnail_url}
                       alt={photo.caption || "Foto"}
@@ -158,20 +130,21 @@ export default function PhotoGrid({
                     </div>
                   )}
                 </figure>
-              </button>
+              </Link>
 
               <div className="card-body p-4 gap-1">
-                <button
-                  type="button"
-                  onClick={() => setSelectedPhoto(photo)}
-                  className="text-sm text-left line-clamp-2 cursor-pointer hover:text-primary"
+                {/* CAPTION BUTTON JUGA DIGANTI MENJADI LINK */}
+                <Link
+                  href={`/photo/${photo.id}`}
+                  scroll={false}
+                  className="text-sm text-left line-clamp-2 cursor-pointer hover:text-primary block"
                 >
                   {photo.caption || "Tanpa caption"}
-                </button>
+                </Link>
 
                 <Link
                   href={photographerHref}
-                  className="text-xs text-base-content/60 hover:text-primary hover:underline"
+                  className="text-xs text-base-content/60 hover:text-primary hover:underline block"
                 >
                   Oleh {photographerLabel}
                 </Link>
@@ -206,79 +179,6 @@ export default function PhotoGrid({
           </button>
         </div>
       )}
-
-      <dialog className={`modal ${selectedPhoto ? "modal-open" : ""}`}>
-        {selectedPhoto && (
-          <div className="modal-box max-w-2xl p-0 overflow-hidden">
-            <button
-              type="button"
-              onClick={closeModal}
-              className="btn btn-sm btn-circle btn-ghost absolute right-3 top-3 z-10 bg-base-100/80"
-              aria-label="Tutup"
-            >
-              ✕
-            </button>
-
-            <div className="bg-base-200">
-              {selectedPhoto.thumbnail_url ? (
-                <ProtectedImage
-                  src={selectedPhoto.thumbnail_url}
-                  alt={selectedPhoto.caption || "Foto"}
-                  className="w-full max-h-[60vh] object-contain"
-                />
-              ) : (
-                <div className="w-full h-64 flex items-center justify-center text-base-content/40 text-sm">
-                  Tidak ada gambar
-                </div>
-              )}
-            </div>
-
-            <div className="p-6">
-              <p className="text-base mb-2">
-                {selectedPhoto.caption || "Tanpa caption"}
-              </p>
-
-              <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
-                <Link
-                  href={getPhotographerHref(selectedPhoto)}
-                  className="text-sm font-medium hover:text-primary hover:underline"
-                  onClick={closeModal}
-                >
-                  Oleh {getPhotographerLabel(selectedPhoto)}
-                </Link>
-                <span className="text-xs text-base-content/50">
-                  {formatUploadDate(selectedPhoto.created_at)}
-                </span>
-              </div>
-
-              <div className="flex flex-wrap gap-2 mb-6">
-                {Array.isArray(selectedPhoto.tags) &&
-                  selectedPhoto.tags.map((tag, idx) => (
-                    <span key={idx} className="badge badge-outline">
-                      {tag}
-                    </span>
-                  ))}
-              </div>
-
-              {selectedPhoto.microstock_url ? (
-                <a
-                  href={selectedPhoto.microstock_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="btn btn-primary w-full"
-                >
-                  Beli / Unduh Resolusi Tinggi
-                </a>
-              ) : (
-                <button type="button" className="btn btn-disabled w-full" disabled>
-                  Tautan belum tersedia
-                </button>
-              )}
-            </div>
-          </div>
-        )}
-        <div className="modal-backdrop" onClick={closeModal}></div>
-      </dialog>
     </>
   );
 }
