@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 export type SearchScope = "caption" | "uploader" | "tags";
-export type SortBy = "created_at" | "caption";
+export type SortBy = "created_at" | "caption_id" | "caption_en";
 export type SortOrder = "asc" | "desc";
 
 interface SearchBarProps {
@@ -223,7 +223,9 @@ export default function SearchBar({
   }
 
   function handleSortByChange(e: React.ChangeEvent<HTMLSelectElement>) {
-    const newSortBy: SortBy = e.target.value === "caption" ? "caption" : "created_at";
+    const val = e.target.value;
+    // Update the sanitize logic here
+    const newSortBy: SortBy = (val === "caption_id" || val === "caption_en") ? val : "created_at";
     setSortBy(newSortBy);
     clearDebounce();
     navigate({ keyword, scopes, startDate, endDate, sortBy: newSortBy, sortOrder });
@@ -337,8 +339,9 @@ export default function SearchBar({
               className="select select-bordered select-xs flex-1"
               aria-label="Urutkan berdasarkan"
             >
-              <option value="created_at">Waktu</option>
-              <option value="caption">Alfabet</option>
+              <option value="created_at">Terbaru</option>
+              <option value="caption_id">Berdasarkan Nama (ID)</option>
+              <option value="caption_en">Berdasarkan Nama (EN)</option>
             </select>
             <select
               value={sortOrder}
@@ -468,7 +471,8 @@ export default function SearchBar({
           aria-label="Urutkan berdasarkan"
         >
           <option value="created_at">Waktu</option>
-          <option value="caption">Alfabet</option>
+          <option value="caption_id">Alfabet (ID)</option>
+          <option value="caption_en">Alfabet (EN)</option>
         </select>
 
         <select

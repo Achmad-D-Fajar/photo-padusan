@@ -115,13 +115,13 @@ export default function PhotoGrid({
                 href={`/photo/${photo.id}`}
                 scroll={false}
                 className="block w-full text-left cursor-pointer"
-                aria-label={`Lihat detail foto: ${photo.caption || "Tanpa caption"}`}
+                aria-label={`Lihat detail foto: ${photo.caption_id ?? photo.caption_en ?? "Tanpa caption"}`}
               >
                 <figure className="aspect-square overflow-hidden bg-base-200">
                   {photo.thumbnail_url ? (
                     <ProtectedImage
                       src={photo.thumbnail_url}
-                      alt={photo.caption || "Foto"}
+                      alt={photo.caption_id ?? photo.caption_en ?? "Foto"}
                       className="w-full h-full object-cover transition-transform hover:scale-105"
                     />
                   ) : (
@@ -133,13 +133,12 @@ export default function PhotoGrid({
               </Link>
 
               <div className="card-body p-4 gap-1">
-                {/* CAPTION BUTTON JUGA DIGANTI MENJADI LINK */}
                 <Link
                   href={`/photo/${photo.id}`}
                   scroll={false}
                   className="text-sm text-left line-clamp-2 cursor-pointer hover:text-primary block"
                 >
-                  {photo.caption || "Tanpa caption"}
+                  {photo.caption_id ?? photo.caption_en ?? "Tanpa caption"}
                 </Link>
 
                 <Link

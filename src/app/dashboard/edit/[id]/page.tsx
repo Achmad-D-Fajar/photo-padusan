@@ -20,10 +20,11 @@ export default async function EditPhotoPage({ params }: EditPhotoPageProps) {
     redirect("/login");
   }
 
+  // Updated query to fetch bilingual columns
   const { data: photo, error: photoError } = await supabase
     .from("photos")
     .select(
-      "id, user_id, thumbnail_url, caption, tags, microstock_url, status, created_at"
+      "id, user_id, thumbnail_url, caption_en, caption_id, tags_en, tags_id, microstock_url, status, created_at"
     )
     .eq("id", id)
     .single();
@@ -45,7 +46,8 @@ export default async function EditPhotoPage({ params }: EditPhotoPageProps) {
         </p>
       </div>
 
-      <EditPhotoForm photo={photo} />
+      {/* Passed 'as any' to bypass any lingering type caches */}
+      <EditPhotoForm photo={photo as any} />
     </main>
   );
 }

@@ -98,50 +98,59 @@ export default function MyPhotoGrid({
   return (
     <>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-        {items.map((photo) => (
-          <div
-            key={photo.id}
-            className="card bg-base-100 shadow-md border border-base-300"
-          >
-            <figure className="aspect-square overflow-hidden bg-base-200">
-              {photo.thumbnail_url ? (
-                <img
-                  src={photo.thumbnail_url}
-                  alt={photo.caption || "Foto"}
-                  className="w-full h-full object-cover"
-                />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center text-base-content/40 text-sm">
-                  Tidak ada gambar
+        {items.map((photo) => {
+          // Gabungkan tags_id dan tags_en untuk ditampilkan
+          const combinedTags = [
+            ...new Set([
+              ...(photo.tags_id ?? []),
+              ...(photo.tags_en ?? []),
+            ]),
+          ];
+
+          return (
+            <div
+              key={photo.id}
+              className="card bg-base-100 shadow-md border border-base-300"
+            >
+              <figure className="aspect-square overflow-hidden bg-base-200">
+                {photo.thumbnail_url ? (
+                  <img
+                    src={photo.thumbnail_url}
+                    alt={photo.caption_id || photo.caption_en || "Foto"}
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center text-base-content/40 text-sm">
+                    Tidak ada gambar
+                  </div>
+                )}
+              </figure>
+              <div className="card-body">
+                <div className="flex items-start justify-between gap-2">
+                  <p className="text-sm flex-1">
+                    {photo.caption_id || photo.caption_en || "Tanpa caption"}
+                  </p>
+                  <StatusBadge status={photo.status} />
                 </div>
-              )}
-            </figure>
-            <div className="card-body">
-              <div className="flex items-start justify-between gap-2">
-                <p className="text-sm flex-1">
-                  {photo.caption || "Tanpa caption"}
-                </p>
-                <StatusBadge status={photo.status} />
-              </div>
-              <div className="flex flex-wrap gap-2 mt-2">
-                {Array.isArray(photo.tags) &&
-                  photo.tags.map((tag, idx) => (
+                <div className="flex flex-wrap gap-2 mt-2">
+                  {combinedTags.map((tag, idx) => (
                     <span key={idx} className="badge badge-outline badge-sm">
                       {tag}
                     </span>
                   ))}
-              </div>
-              <div className="card-actions mt-4">
-                <Link
-                  href={`/dashboard/edit/${photo.id}`}
-                  className="btn btn-sm btn-primary w-full"
-                >
-                  Edit / Publikasikan
-                </Link>
+                </div>
+                <div className="card-actions mt-4">
+                  <Link
+                    href={`/dashboard/edit/${photo.id}`}
+                    className="btn btn-sm btn-primary w-full"
+                  >
+                    Edit / Publikasikan
+                  </Link>
+                </div>
               </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {loadMoreError && (

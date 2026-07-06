@@ -34,11 +34,14 @@ export async function POST(request: NextRequest) {
 
     // Cari UUID berdasarkan display_name (case-insensitive, di-escape
     // agar '_' dalam nama tidak diperlakukan sebagai wildcard ILIKE).
-    const { data: profile, error: profileError } = await supabaseAdmin
+   const { data, error: profileError } = await supabaseAdmin
       .from("profiles")
       .select("id")
       .ilike("display_name", escapeLikePattern(identifier))
       .maybeSingle();
+
+    // Override the "never" type strictly to what we know it returns
+    const profile = data as { id: string } | null;
 
     if (profileError || !profile) {
       // Pesan generik: tidak membocorkan apakah Display Name ini ada atau tidak

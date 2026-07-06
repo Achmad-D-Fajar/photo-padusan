@@ -1,9 +1,9 @@
 import type { SupabaseClient, QueryData } from "@supabase/supabase-js";
-import type { Database } from "@/types/supabase";
+import type { Database } from "@/types/supabase"; 
 import { escapeIlikePattern } from "@/lib/supabase/ilike";
 
 export type SearchScope = "caption" | "uploader" | "tags";
-export type SortBy = "created_at" | "caption";
+export type SortBy = "created_at" | "caption_id" | "caption_en"; // Diperbarui untuk kolom bilingual
 export type SortOrder = "asc" | "desc";
 
 const ALL_SCOPES: SearchScope[] = ["caption", "uploader", "tags"];
@@ -19,32 +19,9 @@ export interface PhotoQueryFilters {
   to: number;
 }
 
-// Kolom dari view `vw_public_photos` (migrasi 0007 & 0008) — satu level
-// datar, tidak ada relasi bersarang `profiles { ... }`.
-const PUBLIC_PHOTOS_SELECT = `
-  id,
-  user_id,
-  thumbnail_url,
-  caption,
-  tags,
-  microstock_url,
-  created_at,
-  display_name,
-  full_name
-`;
+const PUBLIC_PHOTOS_SELECT = "id, user_id, thumbnail_url, caption_en, caption_id, tags_en, tags_id, tags_en_text, tags_id_text, microstock_url, created_at, display_name, full_name" as const;
 
-// Kolom dari tabel `photos` langsung (bukan view), karena Dashboard perlu
-// menampilkan SEMUA status (draft/published/archived) milik diri sendiri —
-// vw_public_photos sengaja hanya berisi status 'published'.
-const MY_PHOTOS_SELECT = `
-  id,
-  thumbnail_url,
-  caption,
-  tags,
-  microstock_url,
-  status,
-  created_at
-`;
+const MY_PHOTOS_SELECT = "id, thumbnail_url, caption_en, caption_id, tags_en, tags_id, tags_en_text, tags_id_text, microstock_url, status, created_at" as const;
 
 function buildOrConditions(
   escapedKeyword: string,
@@ -53,14 +30,16 @@ function buildOrConditions(
   const conditions: string[] = [];
 
   if (activeScopes.includes("caption")) {
-    conditions.push(`caption.ilike.%${escapedKeyword}%`);
+    conditions.push(`caption_en.ilike.%${escapedKeyword}%`);
+    conditions.push(`caption_id.ilike.%${escapedKeyword}%`);
   }
   if (activeScopes.includes("uploader")) {
     conditions.push(`display_name.ilike.%${escapedKeyword}%`);
     conditions.push(`full_name.ilike.%${escapedKeyword}%`);
   }
   if (activeScopes.includes("tags")) {
-    conditions.push(`tags_text.ilike.%${escapedKeyword}%`);
+    conditions.push(`tags_en_text.ilike.%${escapedKeyword}%`);
+    conditions.push(`tags_id_text.ilike.%${escapedKeyword}%`);
   }
 
   return conditions;
@@ -101,10 +80,6 @@ export function buildPublicPhotosQuery(
     query = query.lte("created_at", `${endDate}T23:59:59.999`);
   }
 
-  // Tie-breaker `id` memastikan urutan deterministik antar-halaman —
-  // tanpa ini, baris dengan caption/created_at yang sama persis bisa
-  // terlewat atau muncul dua kali saat berpindah halaman (offset
-  // pagination rentan terhadap urutan yang tidak stabil).
   query = query
     .order(sortBy, { ascending: sortOrder === "asc" })
     .order("id", { ascending: true })
@@ -135,9 +110,6 @@ export function buildPhotographerPhotosQuery(
   const trimmedKeyword = keyword.trim();
   if (trimmedKeyword.length > 0) {
     const escaped = escapeIlikePattern(trimmedKeyword);
-    // Scope "uploader" sengaja diabaikan: seluruh foto di halaman ini
-    // sudah pasti milik satu fotografer yang sama, jadi tidak pernah
-    // mengubah hasil.
     const activeScopes = scopes.filter((s) => s !== "uploader");
     const effectiveScopes: SearchScope[] =
       activeScopes.length > 0 ? activeScopes : ["caption", "tags"];
@@ -210,13 +182,15 @@ export function buildMyPhotosQuery(
   return query;
 }
 
+// Bypassing Supabase's automatic string inference to guarantee 100% type safety
+export type PublicPhotoItem = Database["public"]["Views"]["vw_public_photos"]["Row"];
+
+export type MyPhotoItem = Pick<
+  Database["public"]["Tables"]["photos"]["Row"],
+  "id" | "thumbnail_url" | "caption_en" | "caption_id" | "tags_en" | "tags_id" | "tags_en_text" | "tags_id_text" | "microstock_url" | "status" | "created_at"
+>;
+
+// Keep the query types for component props if needed
 export type PublicPhotosQuery = ReturnType<typeof buildPublicPhotosQuery>;
-export type PublicPhotosResult = QueryData<PublicPhotosQuery>;
-export type PublicPhotoItem = PublicPhotosResult[number];
-
 export type PhotographerPhotosQuery = ReturnType<typeof buildPhotographerPhotosQuery>;
-export type PhotographerPhotosResult = QueryData<PhotographerPhotosQuery>;
-
 export type MyPhotosQuery = ReturnType<typeof buildMyPhotosQuery>;
-export type MyPhotosResult = QueryData<MyPhotosQuery>;
-export type MyPhotoItem = MyPhotosResult[number];

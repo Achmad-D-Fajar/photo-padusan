@@ -57,7 +57,10 @@ function sanitizeDate(raw: string): string {
 }
 
 function sanitizeSortBy(raw: string): SortBy {
-  return raw === "caption" ? "caption" : "created_at";
+  if (raw === "caption_id" || raw === "caption_en") {
+    return raw;
+  }
+  return "created_at";
 }
 
 function sanitizeSortOrder(raw: string): SortOrder {

@@ -8,8 +8,6 @@ interface PhotoPageProps {
   params: Promise<{ id: string }>;
 }
 
-// UUID v4 format — reject anything else immediately to prevent
-// unnecessary DB round-trips from crawler probes or URL scanners.
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -17,105 +15,87 @@ const SITE_URL =
   process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") ??
   "https://etalasepadusan.com";
 
-// LICENSE and RIGHTS_STATEMENT are constants you can customise.
-// CC BY-NC-ND 4.0 is a sensible default for a stock photo aggregator:
-// attribution required, non-commercial, no derivatives, must link to
-// microstock page to acquire a commercial licence.
 const LICENSE_URL = "https://creativecommons.org/licenses/by-nc-nd/4.0/";
 
 async function getPhoto(id: string) {
   const supabase = await createClient();
-
-  const { data, error } = await supabase
+  const { data: photo, error } = await supabase
     .from("vw_public_photos")
-    .select(
-      "id, thumbnail_url, caption, tags, microstock_url, created_at, display_name, full_name"
-    )
+    .select("id, user_id, thumbnail_url, caption_en, caption_id, tags_en, tags_id, microstock_url, status, created_at, display_name, full_name")
     .eq("id", id)
     .single();
 
-  if (error || !data) return null;
-  return data;
+  if (error || !photo) return null;
+  return photo;
 }
 
 export async function generateMetadata({
   params,
 }: PhotoPageProps): Promise<Metadata> {
   const { id } = await params;
-
   if (!UUID_RE.test(id)) return { title: "Foto tidak ditemukan" };
 
   const photo = await getPhoto(id);
   if (!photo) return { title: "Foto tidak ditemukan" };
 
-  const photographerName =
-    photo.full_name || `@${photo.display_name}`;
+  const photographerName = photo.full_name || `@${photo.display_name}`;
+  // Bilingual title: Indonesian first for local SEO signal, English for global
+  const bilingualTitle = `${photo.caption_id ?? photo.caption_en} | ${photo.caption_en ?? photo.caption_id}`;
 
   return {
-    title: photo.caption,
-    description: `${photo.caption} — oleh ${photographerName} di Etalase Padusan.`,
+    title: bilingualTitle,
+    description: `${photo.caption_id} — ${photo.caption_en}. Foto oleh ${photographerName} di Etalase Padusan.`,
     openGraph: {
       type: "article",
       url: `${SITE_URL}/photo/${photo.id}`,
-      title: photo.caption,
-      description: `${photo.caption} — oleh ${photographerName}`,
+      title: bilingualTitle,
+      description: `Foto oleh ${photographerName}`,
       images: photo.thumbnail_url
-        ? [
-            {
-              url: photo.thumbnail_url,
-              alt: photo.caption,
-            },
-          ]
+        ? [{ url: photo.thumbnail_url, alt: `${photo.caption_id} | ${photo.caption_en}` }]
         : [],
       siteName: "Etalase Padusan",
     },
     twitter: {
       card: "summary_large_image",
-      title: photo.caption,
+      title: bilingualTitle,
       description: `Foto oleh ${photographerName}`,
       images: photo.thumbnail_url ? [photo.thumbnail_url] : [],
     },
-    // Prevent indexing of the raw thumbnail URL itself; the canonical
-    // page URL carries the SEO value.
-    alternates: {
-      canonical: `${SITE_URL}/photo/${photo.id}`,
-    },
+    alternates: { canonical: `${SITE_URL}/photo/${photo.id}` },
   };
 }
 
 export default async function PhotoPage({ params }: PhotoPageProps) {
   const { id } = await params;
-
   if (!UUID_RE.test(id)) notFound();
 
   const photo = await getPhoto(id);
   if (!photo) notFound();
 
-  const photographerName = photo.full_name || `@${photo.display_name}`;
+  const photographerName   = photo.full_name || `@${photo.display_name}`;
   const photographerPageUrl = `${SITE_URL}/photographer/${photo.display_name}`;
-  const photoPageUrl = `${SITE_URL}/photo/${photo.id}`;
+  const photoPageUrl        = `${SITE_URL}/photo/${photo.id}`;
+  const uploadDateIso       = new Date(photo.created_at).toISOString().split("T")[0];
 
-  const uploadDateIso = new Date(photo.created_at).toISOString().split("T")[0];
+  // Deduplicated tag union — Indonesian tags first so local keywords appear early
+  const combinedTags = [
+    ...new Set([
+      ...(photo.tags_id ?? []),
+      ...(photo.tags_en ?? []),
+    ]),
+  ];
 
-  // ── JSON-LD: schema.org/ImageObject ────────────────────────────────────────
-  // Google Image Search uses these fields for rich results and licensing
-  // information displayed on mouseover / in the Licensing panel.
-  //
-  // See: https://developers.google.com/search/docs/appearance/structured-data/image-license-metadata
+  // JSON-LD with bilingual signals for Google Image Search Licensable badge
   const jsonLd = {
     "@context": "https://schema.org",
     "@type": "ImageObject",
     "@id": photoPageUrl,
-
-    // ── Content ──────────────────────────────────────────────────────────────
-    name: photo.caption,
-    description: photo.caption,
+    name: photo.caption_en,         // English name for international crawlers
+    description: photo.caption_id,  // Indonesian description for local SEO
     contentUrl: photo.thumbnail_url ?? "",
     thumbnailUrl: photo.thumbnail_url ?? "",
-    keywords: Array.isArray(photo.tags) ? photo.tags.join(", ") : "",
+    keywords: combinedTags.join(", "),
     uploadDate: uploadDateIso,
-
-    // ── Creator / Rights ─────────────────────────────────────────────────────
     creator: {
       "@type": "Person",
       name: photographerName,
@@ -127,31 +107,19 @@ export default async function PhotoPage({ params }: PhotoPageProps) {
       url: photographerPageUrl,
     },
     copyrightYear: new Date(photo.created_at).getUTCFullYear(),
-
-    // ── Licensing (Google Image Search "Licensable" badge) ───────────────────
-    // `license` points to the usage licence terms.
-    // `acquireLicensePage` tells Google where a buyer can obtain a licence.
-    // Both fields are required for the Licensable badge to appear.
     license: LICENSE_URL,
     acquireLicensePage: photo.microstock_url ?? photoPageUrl,
-
-    // ── Attribution ──────────────────────────────────────────────────────────
     creditText: `${photographerName} / Etalase Padusan`,
-
-    // ── Publisher ────────────────────────────────────────────────────────────
     publisher: {
       "@type": "Organization",
       name: "Etalase Padusan",
       url: SITE_URL,
     },
-
-    // ── Canonical page URL ───────────────────────────────────────────────────
     url: photoPageUrl,
   };
 
   return (
     <>
-      {/* Inject JSON-LD into <head> via Next.js script tag */}
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
@@ -169,7 +137,7 @@ export default async function PhotoPage({ params }: PhotoPageProps) {
               </Link>
             </li>
             <li className="text-base-content/60 truncate max-w-xs">
-              {photo.caption}
+              {photo.caption_id ?? photo.caption_en}
             </li>
           </ul>
         </nav>
@@ -179,16 +147,27 @@ export default async function PhotoPage({ params }: PhotoPageProps) {
             {photo.thumbnail_url && (
               <ProtectedImage
                 src={photo.thumbnail_url}
-                alt={photo.caption}
+                // Bilingual alt: Indonesian for local image search, English for global
+                alt={`${photo.caption_id} | ${photo.caption_en}`}
                 className="w-full max-h-[70vh] object-contain"
               />
             )}
           </figure>
 
           <div className="card-body">
-            <h1 className="card-title text-xl">{photo.caption}</h1>
+            {/* Indonesian caption as h1 — primary SEO signal for local search */}
+            <h1 className="text-2xl font-bold leading-snug">
+              {photo.caption_id ?? "Tanpa judul"}
+            </h1>
 
-            <div className="flex items-center justify-between flex-wrap gap-2 text-sm">
+            {/* English caption as h2 — secondary signal for global/microstock search */}
+            {photo.caption_en && (
+              <h2 className="text-base font-normal text-base-content/60 mt-1">
+                {photo.caption_en}
+              </h2>
+            )}
+
+            <div className="flex items-center justify-between flex-wrap gap-2 text-sm mt-3">
               <Link
                 href={`/photographer/${photo.display_name}`}
                 className="hover:text-primary hover:underline font-medium"
@@ -207,14 +186,16 @@ export default async function PhotoPage({ params }: PhotoPageProps) {
               </time>
             </div>
 
-            <div className="flex flex-wrap gap-2 mt-2">
-              {Array.isArray(photo.tags) &&
-                photo.tags.map((tag, idx) => (
+            {/* Combined deduplicated tags from both languages */}
+            {combinedTags.length > 0 && (
+              <div className="flex flex-wrap gap-2 mt-4">
+                {combinedTags.map((tag, idx) => (
                   <span key={idx} className="badge badge-outline">
                     {tag}
                   </span>
                 ))}
-            </div>
+              </div>
+            )}
 
             <div className="card-actions mt-6">
               {photo.microstock_url ? (
@@ -235,7 +216,7 @@ export default async function PhotoPage({ params }: PhotoPageProps) {
 
             <p className="text-xs text-base-content/40 mt-4">
               Lisensi:{" "}
-              <a
+              <a 
                 href={LICENSE_URL}
                 target="_blank"
                 rel="noopener noreferrer"

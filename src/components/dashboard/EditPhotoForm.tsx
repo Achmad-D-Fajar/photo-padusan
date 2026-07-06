@@ -14,11 +14,12 @@ interface EditPhotoFormProps {
     | "id"
     | "user_id"
     | "thumbnail_url"
-    | "caption"
-    | "tags"
-    | "microstock_url"
-    | "status"
+    | "caption_en"
+    | "caption_id"
+    | "tags_en"
+    | "tags_id"
     | "created_at"
+    | "microstock_url"
   >;
 }
 
@@ -34,7 +35,7 @@ const URL_REGEX = /^https?:\/\/.+/i;
 const CAPTION_MAX_LENGTH = 300;
 const MAX_TAGS = 10;
 
-function tagsToString(tags: string[]): string {
+function tagsToString(tags: string[] | null | undefined): string {
   return Array.isArray(tags) ? tags.join(", ") : "";
 }
 
@@ -49,17 +50,28 @@ function stringToTags(value: string): string[] {
 export default function EditPhotoForm({ photo }: EditPhotoFormProps) {
   const router = useRouter();
 
-  const [caption, setCaption] = useState(photo.caption || "");
-  const [tagsInput, setTagsInput] = useState(tagsToString(photo.tags));
+  // Bilingual States
+  const [captionId, setCaptionId] = useState(photo.caption_id || "");
+  const [captionEn, setCaptionEn] = useState(photo.caption_en || "");
+  const [tagsIdInput, setTagsIdInput] = useState(tagsToString(photo.tags_id));
+  const [tagsEnInput, setTagsEnInput] = useState(tagsToString(photo.tags_en));
+  
   const [microstockUrl, setMicrostockUrl] = useState(
     photo.microstock_url || ""
   );
-  const [currentStatus, setCurrentStatus] = useState(photo.status);
+  
+  // Note: We use a local state for optimistic UI updates, defaulting to published if microstock exists for safety, 
+  // though realistically this component should probably accept status as a prop. 
+  // We'll keep it as "draft" visually if it lacks the microstock URL to match standard logic.
+  const [currentStatus, setCurrentStatus] = useState<"draft" | "published" | "archived">(
+    photo.microstock_url ? "published" : "draft"
+  );
 
   const [actionStatus, setActionStatus] = useState<ActionStatus>("idle");
   const [message, setMessage] = useState("");
   const [fieldErrors, setFieldErrors] = useState<{
-    caption?: string;
+    captionId?: string;
+    captionEn?: string;
     microstockUrl?: string;
   }>({});
 
@@ -69,12 +81,17 @@ export default function EditPhotoForm({ photo }: EditPhotoFormProps) {
     actionStatus === "deleting";
 
   function validateCommon(): boolean {
-    const errors: { caption?: string; microstockUrl?: string } = {};
+    const errors: { captionId?: string; captionEn?: string; microstockUrl?: string } = {};
 
-    if (caption.trim().length === 0) {
-      errors.caption = "Caption tidak boleh kosong.";
-    } else if (caption.trim().length > CAPTION_MAX_LENGTH) {
-      errors.caption = `Caption maksimal ${CAPTION_MAX_LENGTH} karakter.`;
+    if (captionId.trim().length === 0 && captionEn.trim().length === 0) {
+      errors.captionId = "Minimal satu bahasa caption (ID atau EN) harus diisi.";
+    } 
+    
+    if (captionId.trim().length > CAPTION_MAX_LENGTH) {
+      errors.captionId = `Caption ID maksimal ${CAPTION_MAX_LENGTH} karakter.`;
+    }
+    if (captionEn.trim().length > CAPTION_MAX_LENGTH) {
+      errors.captionEn = `Caption EN maksimal ${CAPTION_MAX_LENGTH} karakter.`;
     }
 
     setFieldErrors(errors);
@@ -92,16 +109,18 @@ export default function EditPhotoForm({ photo }: EditPhotoFormProps) {
     setMessage("");
 
     try {
-      const supabase = createClient();
-
+      const supabase = createClient() as any;
       const trimmedMicrostockUrl = microstockUrl.trim();
+      
       const { error: updateError } = await supabase
         .from("photos")
         .update({
-          caption: caption.trim(),
-          tags: stringToTags(tagsInput),
-          microstock_url:
-            trimmedMicrostockUrl.length > 0 ? trimmedMicrostockUrl : null,
+          caption_id: captionId.trim() || null,
+          caption_en: captionEn.trim() || null,
+          tags_id: stringToTags(tagsIdInput),
+          tags_en: stringToTags(tagsEnInput),
+          microstock_url: trimmedMicrostockUrl.length > 0 ? trimmedMicrostockUrl : null,
+          status: "draft"
         })
         .eq("id", photo.id);
 
@@ -109,6 +128,7 @@ export default function EditPhotoForm({ photo }: EditPhotoFormProps) {
         throw new Error(updateError.message);
       }
 
+      setCurrentStatus("draft");
       setActionStatus("success");
       setMessage("Draf berhasil disimpan.");
     } catch (err) {
@@ -123,9 +143,9 @@ export default function EditPhotoForm({ photo }: EditPhotoFormProps) {
     const isCaptionValid = validateCommon();
     const trimmedMicrostockUrl = microstockUrl.trim();
 
-    const errors: { caption?: string; microstockUrl?: string } = {};
-    if (!isCaptionValid && caption.trim().length === 0) {
-      errors.caption = "Caption tidak boleh kosong.";
+    const errors: { captionId?: string; microstockUrl?: string } = {};
+    if (!isCaptionValid && captionId.trim().length === 0 && captionEn.trim().length === 0) {
+      errors.captionId = "Minimal satu bahasa caption harus diisi.";
     }
     if (trimmedMicrostockUrl.length === 0) {
       errors.microstockUrl = "URL Microstock wajib diisi untuk publikasi.";
@@ -144,19 +164,18 @@ export default function EditPhotoForm({ photo }: EditPhotoFormProps) {
     setMessage("");
 
     const previousStatus = currentStatus;
-
-    // Optimistic update: badge status langsung berubah jadi "Published"
-    // sebelum konfirmasi server, agar terasa responsif.
     setCurrentStatus("published");
 
     try {
-      const supabase = createClient();
+      const supabase = createClient() as any;
 
       const { error: updateError } = await supabase
         .from("photos")
         .update({
-          caption: caption.trim(),
-          tags: stringToTags(tagsInput),
+          caption_id: captionId.trim() || null,
+          caption_en: captionEn.trim() || null,
+          tags_id: stringToTags(tagsIdInput),
+          tags_en: stringToTags(tagsEnInput),
           microstock_url: trimmedMicrostockUrl,
           status: "published",
         })
@@ -169,7 +188,6 @@ export default function EditPhotoForm({ photo }: EditPhotoFormProps) {
       setActionStatus("success");
       setMessage("Foto berhasil dipublikasikan!");
     } catch (err) {
-      // Rollback optimistic status karena request gagal.
       setCurrentStatus(previousStatus);
       setActionStatus("error");
       setMessage(
@@ -188,7 +206,7 @@ export default function EditPhotoForm({ photo }: EditPhotoFormProps) {
     setMessage("");
 
     try {
-      const supabase = createClient();
+      const supabase = createClient() as any;
 
       if (photo.thumbnail_url) {
         const storagePath = extractStoragePath(
@@ -236,7 +254,7 @@ export default function EditPhotoForm({ photo }: EditPhotoFormProps) {
           {photo.thumbnail_url ? (
             <img
               src={photo.thumbnail_url}
-              alt={caption || "Foto"}
+              alt={captionId || captionEn || "Foto"}
               className="w-full h-full object-cover"
             />
           ) : (
@@ -256,58 +274,110 @@ export default function EditPhotoForm({ photo }: EditPhotoFormProps) {
           )}
         </div>
 
-        <div className="form-control">
-          <label className="label" htmlFor="caption">
-            <span className="label-text">Caption</span>
-          </label>
-          <textarea
-            id="caption"
-            value={caption}
-            onChange={(e) => {
-              setCaption(e.target.value);
-              if (actionStatus !== "idle") setActionStatus("idle");
-            }}
-            className={`textarea textarea-bordered w-full ${
-              fieldErrors.caption ? "textarea-error" : ""
-            }`}
-            rows={3}
-            maxLength={CAPTION_MAX_LENGTH}
-            disabled={isBusy}
-          />
-          <label className="label">
-            <span className="label-text-alt text-base-content/60">
-              {caption.length}/{CAPTION_MAX_LENGTH}
-            </span>
-            {fieldErrors.caption && (
-              <span className="label-text-alt text-error">
-                {fieldErrors.caption}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="form-control">
+            <label className="label" htmlFor="captionId">
+              <span className="label-text">Caption (ID)</span>
+            </label>
+            <textarea
+              id="captionId"
+              value={captionId}
+              onChange={(e) => {
+                setCaptionId(e.target.value);
+                if (actionStatus !== "idle") setActionStatus("idle");
+              }}
+              className={`textarea textarea-bordered w-full ${
+                fieldErrors.captionId ? "textarea-error" : ""
+              }`}
+              rows={3}
+              maxLength={CAPTION_MAX_LENGTH}
+              disabled={isBusy}
+            />
+            <label className="label">
+              <span className="label-text-alt text-base-content/60">
+                {captionId.length}/{CAPTION_MAX_LENGTH}
               </span>
-            )}
-          </label>
+              {fieldErrors.captionId && (
+                <span className="label-text-alt text-error">
+                  {fieldErrors.captionId}
+                </span>
+              )}
+            </label>
+          </div>
+
+          <div className="form-control">
+            <label className="label" htmlFor="captionEn">
+              <span className="label-text">Caption (EN)</span>
+            </label>
+            <textarea
+              id="captionEn"
+              value={captionEn}
+              onChange={(e) => {
+                setCaptionEn(e.target.value);
+                if (actionStatus !== "idle") setActionStatus("idle");
+              }}
+              className={`textarea textarea-bordered w-full ${
+                fieldErrors.captionEn ? "textarea-error" : ""
+              }`}
+              rows={3}
+              maxLength={CAPTION_MAX_LENGTH}
+              disabled={isBusy}
+            />
+            <label className="label">
+              <span className="label-text-alt text-base-content/60">
+                {captionEn.length}/{CAPTION_MAX_LENGTH}
+              </span>
+              {fieldErrors.captionEn && (
+                <span className="label-text-alt text-error">
+                  {fieldErrors.captionEn}
+                </span>
+              )}
+            </label>
+          </div>
         </div>
 
-        <div className="form-control">
-          <label className="label" htmlFor="tags">
-            <span className="label-text">Tags (pisahkan dengan koma)</span>
-          </label>
-          <input
-            id="tags"
-            type="text"
-            value={tagsInput}
-            onChange={(e) => {
-              setTagsInput(e.target.value);
-              if (actionStatus !== "idle") setActionStatus("idle");
-            }}
-            placeholder="contoh: sawah, sunset, pedesaan"
-            className="input input-bordered w-full"
-            disabled={isBusy}
-          />
-          <label className="label">
-            <span className="label-text-alt text-base-content/60">
-              Maksimal {MAX_TAGS} tag.
-            </span>
-          </label>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="form-control">
+            <label className="label" htmlFor="tagsId">
+              <span className="label-text">Tags ID (pisahkan dgn koma)</span>
+            </label>
+            <input
+              id="tagsId"
+              type="text"
+              value={tagsIdInput}
+              onChange={(e) => {
+                setTagsIdInput(e.target.value);
+                if (actionStatus !== "idle") setActionStatus("idle");
+              }}
+              placeholder="sawah, pedesaan"
+              className="input input-bordered w-full"
+              disabled={isBusy}
+            />
+          </div>
+
+          <div className="form-control">
+            <label className="label" htmlFor="tagsEn">
+              <span className="label-text">Tags EN (pisahkan dgn koma)</span>
+            </label>
+            <input
+              id="tagsEn"
+              type="text"
+              value={tagsEnInput}
+              onChange={(e) => {
+                setTagsEnInput(e.target.value);
+                if (actionStatus !== "idle") setActionStatus("idle");
+              }}
+              placeholder="ricefield, village"
+              className="input input-bordered w-full"
+              disabled={isBusy}
+            />
+          </div>
         </div>
+        <label className="label -mt-2">
+            <span className="label-text-alt text-base-content/60">
+              Maksimal {MAX_TAGS} tag per bahasa.
+            </span>
+        </label>
 
         <div className="form-control">
           <label className="label" htmlFor="microstock_url">

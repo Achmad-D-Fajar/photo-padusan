@@ -79,7 +79,7 @@ export default function AvatarUploader({
       const extension = extensionFromMimeType(compressedBlob.type);
       const fileName = `${userId}/${crypto.randomUUID()}.${extension}`;
 
-      const supabase = createClient();
+      const supabase = createClient() as any;
 
       const { error: uploadError } = await supabase.storage
         .from("avatars")
@@ -98,8 +98,8 @@ export default function AvatarUploader({
 
       const newAvatarUrl = publicUrlData.publicUrl;
 
-      const { error: updateError } = await supabase
-        .from("profiles")
+      const { error: updateError } = await (supabase
+        .from("profiles") as any)
         .update({ avatar_url: newAvatarUrl })
         .eq("id", userId);
 
