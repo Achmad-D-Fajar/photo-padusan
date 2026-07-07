@@ -199,18 +199,26 @@ export default async function PhotoPage({ params }: PhotoPageProps) {
 
             <div className="card-actions mt-6">
               {photo.microstock_url ? (
+                // Microstock photo: external purchase link
                 <a
                   href={photo.microstock_url}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="btn btn-primary flex-1"
                 >
-                  Beli / Unduh Resolusi Tinggi
+                  Beli di Microstock
                 </a>
               ) : (
-                <button type="button" className="btn btn-disabled flex-1" disabled>
-                  Tautan belum tersedia
-                </button>
+                // Platform-only photo: force-download through our proxy route.
+                // `download` attribute hints to the browser; the server enforces
+                // it via Content-Disposition: attachment regardless.
+                <a
+                  href={`/api/photos/download/${photo.id}`}
+                  download
+                  className="btn btn-success flex-1"
+                >
+                  Download Resolusi Asli
+                </a>
               )}
             </div>
 

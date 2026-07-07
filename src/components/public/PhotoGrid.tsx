@@ -117,19 +117,26 @@ export default function PhotoGrid({
                 className="block w-full text-left cursor-pointer"
                 aria-label={`Lihat detail foto: ${photo.caption_id ?? photo.caption_en ?? "Tanpa caption"}`}
               >
-                <figure className="aspect-square overflow-hidden bg-base-200">
-                  {photo.thumbnail_url ? (
-                    <ProtectedImage
-                      src={photo.thumbnail_url}
-                      alt={photo.caption_id ?? photo.caption_en ?? "Foto"}
-                      className="w-full h-full object-cover transition-transform hover:scale-105"
-                    />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center text-base-content/40 text-sm">
-                      Tidak ada gambar
-                    </div>
-                  )}
-                </figure>
+                <figure className="aspect-square overflow-hidden bg-base-200 relative">
+                {photo.thumbnail_url ? (
+                  <ProtectedImage
+                    src={photo.thumbnail_url}
+                    alt={photo.caption_id ?? photo.caption_en ?? "Foto"}
+                    className="w-full h-full object-cover transition-transform hover:scale-105"
+                  />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center text-base-content/40 text-sm">
+                    Tidak ada gambar
+                  </div>
+                )}
+
+                {/* Feature 4: visible indicator for freely downloadable photos */}
+                {photo.microstock_url === null && (
+                  <span className="badge badge-success absolute bottom-2 left-2 z-10">
+                    Unduh Langsung
+                  </span>
+                )}
+              </figure>
               </Link>
 
               <div className="card-body p-4 gap-1">

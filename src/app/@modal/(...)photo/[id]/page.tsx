@@ -24,10 +24,11 @@ export default async function ModalPhotoPage({ params }: ModalPhotoPageProps) {
   const { id } = await params;
   const supabase = await createClient();
 
-  // Single-line select to prevent inference crashing
   const { data: photo, error } = await supabase
     .from("vw_public_photos")
-    .select("id, user_id, thumbnail_url, caption_en, caption_id, tags_en, tags_id, microstock_url, created_at, display_name, full_name")
+    .select(
+      "id, user_id, thumbnail_url, caption_en, caption_id, tags_en, tags_id, microstock_url, created_at, display_name, full_name"
+    )
     .eq("id", id)
     .single();
 
@@ -48,22 +49,22 @@ export default async function ModalPhotoPage({ params }: ModalPhotoPageProps) {
         {typedPhoto.thumbnail_url && (
           <ProtectedImage
             src={typedPhoto.thumbnail_url}
-            alt={`${typedPhoto.caption_id ?? "Tanpa judul"} | ${typedPhoto.caption_en ?? ""}`}
+            alt={`${typedPhoto.caption_id ?? "Foto tanpa judul"} | ${typedPhoto.caption_en ?? "Untitled photo"}`}
             className="w-full h-full object-contain"
           />
         )}
       </figure>
 
       <div className="p-6 space-y-4">
+        {/* Bug 3 fix: caption_id always shown with explicit fallback */}
         <h2 className="text-xl font-bold leading-snug">
-          {typedPhoto.caption_id ?? "Tanpa judul"}
+          {typedPhoto.caption_id ?? "Foto tanpa judul"}
         </h2>
 
-        {typedPhoto.caption_en && (
-          <p className="text-sm text-base-content/60 -mt-2">
-            {typedPhoto.caption_en}
-          </p>
-        )}
+        {/* Bug 3 fix: caption_en always shown (no conditional) with explicit fallback */}
+        <p className="text-sm italic text-base-content/60 -mt-2">
+          {typedPhoto.caption_en ?? "Untitled photo"}
+        </p>
 
         <div className="flex items-center justify-between flex-wrap gap-2">
           <Link
@@ -94,6 +95,13 @@ export default async function ModalPhotoPage({ params }: ModalPhotoPageProps) {
           </div>
         )}
 
+        {/*
+          Bug 2 fix: single CTA block at the bottom.
+          The old "Beli / Unduh Resolusi Tinggi" / "Tautan belum tersedia"
+          block was left in place when the new buttons were added, producing
+          two buttons. Replaced here with a single conditional that covers
+          both cases from the Feature 3 spec.
+        */}
         {typedPhoto.microstock_url ? (
           <a
             href={typedPhoto.microstock_url}
@@ -101,12 +109,16 @@ export default async function ModalPhotoPage({ params }: ModalPhotoPageProps) {
             rel="noopener noreferrer"
             className="btn btn-primary w-full"
           >
-            Beli / Unduh Resolusi Tinggi
+            Beli di Microstock
           </a>
         ) : (
-          <button type="button" className="btn btn-disabled w-full" disabled>
-            Tautan belum tersedia
-          </button>
+          <a
+            href={`/api/photos/download/${typedPhoto.id}`}
+            download
+            className="btn btn-success w-full"
+          >
+            Download Resolusi Asli
+          </a>
         )}
       </div>
     </ModalUI>
