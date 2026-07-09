@@ -1,2 +1,29 @@
 @import "tailwindcss";
 @plugin "daisyui";
+
+@theme {
+  --font-display: var(--font-space-grotesk), sans-serif;
+  --font-content: var(--font-atkinson), sans-serif;
+}
+
+@layer base {
+  :root {
+    /* Enforce Strict Brutalism pada DaisyUI secara global */
+    --rounded-box: 0rem;
+    --rounded-btn: 0rem;
+    --rounded-badge: 0rem;
+    --tab-radius: 0rem;
+  }
+
+  body {
+    background-color: #E5E5E5;
+    color: #111111;
+    font-family: var(--font-content);
+  }
+
+  /* Focus ring global untuk aksesibilitas keyboard/motorik */
+  *:focus-visible {
+    outline: none !important;
+    box-shadow: 0 0 0 4px #44AA99, 0 0 0 6px #111111 !important;
+  }
+}

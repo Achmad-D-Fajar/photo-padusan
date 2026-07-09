@@ -41,15 +41,14 @@ export default function ModalUI({ children }: ModalUIProps) {
   }, [router]);
 
   return (
-    <dialog ref={dialogRef} className="modal">
-      {/* Tambahkan 'relative' di sini agar posisi absolut tombol X bekerja */}
-      <div className="modal-box max-w-2xl p-0 overflow-hidden relative">
+    <dialog ref={dialogRef} className="modal bg-black/60 backdrop-blur-sm">
+      <div className="modal-box max-w-4xl p-0 overflow-hidden relative rounded-none border-4 border-[#111111] bg-white shadow-[16px_16px_0px_#111111]">
         
         {/* Tombol (X) Close */}
         <button
           type="button"
           onClick={() => dialogRef.current?.close()}
-          className="btn btn-sm btn-circle btn-ghost absolute right-3 top-3 z-10 bg-base-100/80 hover:bg-base-200"
+          className="btn btn-sm h-12 w-12 p-0 rounded-none border-4 border-[#111111] bg-[#882255] hover:bg-[#6a1a41] text-white absolute right-4 top-4 z-10 shadow-[4px_4px_0px_#111111] hover:translate-y-[2px] hover:shadow-[2px_2px_0px_#111111] transition-all font-bold text-2xl"
           aria-label="Tutup modal"
         >
           ✕

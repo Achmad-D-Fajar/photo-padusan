@@ -4,13 +4,10 @@ import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { extractStoragePath } from "@/lib/storage";
-import {
-  compressImageToSquare,
-  extensionFromMimeType,
-} from "@/lib/image-compression";
+import { compressImageToSquare, extensionFromMimeType } from "@/lib/image-compression";
 
 const AVATAR_SIZE_PX = 256;
-const MAX_SOURCE_FILE_SIZE = 8 * 1024 * 1024; // 8MB sebelum kompresi
+const MAX_SOURCE_FILE_SIZE = 8 * 1024 * 1024;
 
 interface AvatarUploaderProps {
   userId: string;
@@ -25,11 +22,7 @@ function getInitial(label: string): string {
   return trimmed.length > 0 ? trimmed[0].toUpperCase() : "?";
 }
 
-export default function AvatarUploader({
-  userId,
-  initialAvatarUrl,
-  fallbackLabel,
-}: AvatarUploaderProps) {
+export default function AvatarUploader({ userId, initialAvatarUrl, fallbackLabel }: AvatarUploaderProps) {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -66,9 +59,6 @@ export default function AvatarUploader({
     setStatus("uploading");
     setErrorMessage("");
 
-    // Pratinjau langsung tampil dari file asli (sebelum kompresi selesai)
-    // agar terasa responsif, lalu diganti URL publik sesungguhnya setelah
-    // upload sukses.
     const localPreviewUrl = URL.createObjectURL(file);
     setPreviewUrl(localPreviewUrl);
 
@@ -81,134 +71,86 @@ export default function AvatarUploader({
 
       const supabase = createClient() as any;
 
-      const { error: uploadError } = await supabase.storage
-        .from("avatars")
-        .upload(fileName, compressedBlob, {
-          contentType: compressedBlob.type,
-          upsert: false,
-        });
+      const { error: uploadError } = await supabase.storage.from("avatars").upload(fileName, compressedBlob, {
+        contentType: compressedBlob.type,
+        upsert: false,
+      });
 
-      if (uploadError) {
-        throw new Error(uploadError.message);
-      }
+      if (uploadError) throw new Error(uploadError.message);
 
-      const { data: publicUrlData } = supabase.storage
-        .from("avatars")
-        .getPublicUrl(fileName);
-
+      const { data: publicUrlData } = supabase.storage.from("avatars").getPublicUrl(fileName);
       const newAvatarUrl = publicUrlData.publicUrl;
 
-      const { error: updateError } = await (supabase
-        .from("profiles") as any)
-        .update({ avatar_url: newAvatarUrl })
-        .eq("id", userId);
+      const { error: updateError } = await supabase.from("profiles").update({ avatar_url: newAvatarUrl }).eq("id", userId);
 
       if (updateError) {
-        // Rollback: hapus file yang baru saja diunggah karena gagal
-        // tersimpan ke database, agar tidak ada file yatim di Storage.
         await supabase.storage.from("avatars").remove([fileName]);
         throw new Error(updateError.message);
       }
 
-      // Hapus avatar lama (jika ada) setelah avatar baru berhasil
-      // tersimpan, agar tidak menumpuk file tak terpakai di Storage.
       if (previousAvatarUrl) {
         const oldPath = extractStoragePath(previousAvatarUrl, "avatars");
         if (oldPath) {
-          const { error: removeOldError } = await supabase.storage
-            .from("avatars")
-            .remove([oldPath]);
-
-          if (removeOldError) {
-            console.error("Gagal menghapus avatar lama:", removeOldError.message);
-          }
+          await supabase.storage.from("avatars").remove([oldPath]);
         }
       }
 
       setAvatarUrl(newAvatarUrl);
       setPreviewUrl(null);
       setStatus("idle");
-
-      // Navbar adalah Server Component yang membaca avatar_url saat
-      // dirender — refresh agar perubahan langsung terlihat di sana tanpa
-      // perlu hard reload penuh.
       router.refresh();
     } catch (err) {
       setAvatarUrl(previousAvatarUrl);
       setPreviewUrl(null);
       setStatus("error");
-      setErrorMessage(
-        err instanceof Error ? err.message : "Gagal mengunggah avatar."
-      );
+      setErrorMessage(err instanceof Error ? err.message : "Gagal mengunggah avatar.");
     } finally {
       URL.revokeObjectURL(localPreviewUrl);
-      if (fileInputRef.current) {
-        fileInputRef.current.value = "";
-      }
+      if (fileInputRef.current) fileInputRef.current.value = "";
     }
   }
 
   return (
-    <div className="flex flex-col items-center gap-3 mb-2">
+    <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6 mb-4 p-6 bg-[#E5E5E5] border-4 border-[#111111] shadow-[4px_4px_0px_#111111]">
       <button
         type="button"
         onClick={handleTriggerClick}
         disabled={isUploading}
-        className="relative group"
+        className="relative group block"
         aria-label="Ubah foto profil"
       >
-        <div className="avatar">
-          <div className="w-24 h-24 rounded-full overflow-hidden bg-neutral">
-            {displayedUrl ? (
-              <img
-                src={displayedUrl}
-                alt={fallbackLabel}
-                className="w-full h-full object-cover"
-              />
-            ) : (
-              <div className="w-full h-full flex items-center justify-center text-neutral-content text-3xl">
-                {initial}
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div className="absolute inset-0 rounded-full bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-          {isUploading ? (
-            <span className="loading loading-spinner loading-sm text-white"></span>
+        <div className="w-32 h-32 rounded-none border-4 border-[#111111] shadow-[6px_6px_0px_#111111] overflow-hidden bg-white transition-transform group-hover:translate-y-[2px] group-hover:shadow-[4px_4px_0px_#111111]">
+          {displayedUrl ? (
+            <img src={displayedUrl} alt={fallbackLabel} className="w-full h-full object-cover" />
           ) : (
-            <span className="text-white text-xs font-medium">Ubah Foto</span>
+            <div className="w-full h-full flex items-center justify-center text-[#111111] font-display font-bold text-5xl">
+              {initial}
+            </div>
           )}
         </div>
       </button>
 
-      <button
-        type="button"
-        onClick={handleTriggerClick}
-        disabled={isUploading}
-        className="btn btn-sm btn-outline"
-      >
-        {isUploading ? (
-          <>
-            <span className="loading loading-spinner loading-xs"></span>
-            Mengunggah...
-          </>
-        ) : (
-          "Ubah Foto"
-        )}
-      </button>
+      <div className="flex flex-col gap-3 justify-center text-center sm:text-left h-32">
+        <h3 className="font-display font-bold text-2xl uppercase tracking-tighter text-[#111111]">Foto Profil</h3>
+        <button
+          type="button"
+          onClick={handleTriggerClick}
+          disabled={isUploading}
+          className="btn bg-white hover:bg-[#111111] hover:text-white text-[#111111] border-4 border-[#111111] rounded-none font-bold uppercase shadow-[4px_4px_0px_#111111]"
+        >
+          {isUploading ? (
+            <>
+              <span className="loading loading-spinner loading-xs"></span>
+              Mengunggah...
+            </>
+          ) : (
+            "Ubah Foto"
+          )}
+        </button>
+        {status === "error" && <p className="text-sm font-bold text-[#882255] bg-white border-2 border-[#882255] px-2 py-1 mt-1">{errorMessage}</p>}
+      </div>
 
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="image/*"
-        onChange={handleFileChange}
-        className="hidden"
-      />
-
-      {status === "error" && (
-        <p className="text-xs text-error text-center">{errorMessage}</p>
-      )}
+      <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFileChange} className="hidden" />
     </div>
   );
 }

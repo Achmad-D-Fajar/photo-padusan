@@ -29,9 +29,6 @@ interface DashboardPageProps {
   }>;
 }
 
-// Dashboard tidak menyediakan scope "uploader" karena seluruh foto di
-// sini selalu milik diri sendiri — mencari berdasarkan nama uploader
-// tidak akan pernah mengubah hasil.
 const VALID_SCOPES: SearchScope[] = ["caption", "tags"];
 const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -101,8 +98,8 @@ export default async function DashboardPage({
 
   if (photosError) {
     return (
-      <main className="container mx-auto px-4 py-10">
-        <div role="alert" className="alert alert-error">
+      <main className="container mx-auto px-4 py-12">
+        <div role="alert" className="alert rounded-none border-4 border-[#111111] shadow-[8px_8px_0px_#111111] bg-[#882255] text-white p-6 font-bold text-lg">
           <span>Gagal memuat foto: {photosError.message}</span>
         </div>
       </main>
@@ -147,20 +144,28 @@ export default async function DashboardPage({
   }
 
   return (
-    <main className="container mx-auto px-4 py-10">
-      <div className="flex flex-wrap items-end justify-between gap-4 mb-6">
-        <div>
-          <h1 className="text-3xl font-bold">Dasbor Saya</h1>
-          <p className="text-base-content/70 mt-1">
+    <main className="container mx-auto px-4 py-12">
+      {/* HEADER DASBOR */}
+      <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-8 mb-12 border-b-4 border-[#111111] pb-8">
+        <div className="flex flex-col items-start gap-3">
+          <h1 className="font-display text-5xl font-bold uppercase tracking-tighter text-[#111111]">
+            Dasbor Saya
+          </h1>
+          <p className="text-xl font-bold text-[#111111] bg-white border-2 border-[#111111] px-4 py-2 shadow-[4px_4px_0px_#111111] uppercase tracking-wide">
             Kelola draf dan foto yang telah dipublikasikan.
           </p>
         </div>
-        <Link href="/dashboard/upload" className="btn btn-primary">
-          Unggah Foto Baru
+        
+        <Link 
+          href="/dashboard/upload" 
+          className="btn bg-[#117733] hover:bg-[#0e5c27] text-white border-4 border-[#111111] rounded-none font-bold text-xl uppercase h-16 px-8 shadow-[6px_6px_0px_#111111] hover:translate-y-[2px] hover:shadow-[4px_4px_0px_#111111] transition-all flex-shrink-0"
+        >
+          + UNGGAH FOTO BARU
         </Link>
       </div>
 
-      <div className="max-w-2xl mb-6">
+      {/* WRAPPER PENCARIAN */}
+      <div className="max-w-4xl mb-12">
         <SearchBar
           initialKeyword={keyword}
           initialScopes={scopes}
@@ -172,6 +177,7 @@ export default async function DashboardPage({
         />
       </div>
 
+      {/* GRID FOTO */}
       <MyPhotoGrid
         photos={photoList}
         totalCount={totalCount}
@@ -180,6 +186,7 @@ export default async function DashboardPage({
         loadMoreAction={loadMoreMyPhotos}
       />
 
+      {/* KONTROL PAGINASI */}
       {totalCount > 0 && (
         <PaginationControls page={page} pageSize={pageSize} totalCount={totalCount} />
       )}

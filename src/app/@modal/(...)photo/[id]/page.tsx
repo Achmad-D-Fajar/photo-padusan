@@ -10,10 +10,7 @@ interface ModalPhotoPageProps {
 }
 
 function getPhotographerLabel(photo: PublicPhotoItem): string {
-  if (photo.full_name && photo.full_name.trim().length > 0) {
-    return photo.full_name;
-  }
-  return `@${photo.display_name}`;
+  return photo.full_name && photo.full_name.trim().length > 0 ? photo.full_name : `@${photo.display_name}`;
 }
 
 function getPhotographerHref(photo: PublicPhotoItem): string {
@@ -26,100 +23,67 @@ export default async function ModalPhotoPage({ params }: ModalPhotoPageProps) {
 
   const { data: photo, error } = await supabase
     .from("vw_public_photos")
-    .select(
-      "id, user_id, thumbnail_url, caption_en, caption_id, tags_en, tags_id, microstock_url, created_at, display_name, full_name"
-    )
+    .select("id, user_id, thumbnail_url, caption_en, caption_id, tags_en, tags_id, microstock_url, created_at, display_name, full_name")
     .eq("id", id)
     .single();
 
   if (error || !photo) notFound();
-
   const typedPhoto = photo as PublicPhotoItem;
-
-  const combinedTags = [
-    ...new Set([
-      ...(typedPhoto.tags_id ?? []),
-      ...(typedPhoto.tags_en ?? []),
-    ]),
-  ];
+  const combinedTags = [...new Set([...(typedPhoto.tags_id ?? []), ...(typedPhoto.tags_en ?? [])])];
 
   return (
     <ModalUI>
-      <figure className="aspect-video overflow-hidden bg-base-200">
+      <figure className="aspect-video bg-[#E5E5E5] border-b-4 border-[#111111] flex items-center justify-center p-4">
         {typedPhoto.thumbnail_url && (
           <ProtectedImage
             src={typedPhoto.thumbnail_url}
-            alt={`${typedPhoto.caption_id ?? "Foto tanpa judul"} | ${typedPhoto.caption_en ?? "Untitled photo"}`}
-            className="w-full h-full object-contain"
+            alt={`${typedPhoto.caption_id ?? "Foto"} | ${typedPhoto.caption_en ?? "Photo"}`}
+            className="w-full h-full object-contain border-2 border-[#111111] shadow-[4px_4px_0px_#111111]"
           />
         )}
       </figure>
 
-      <div className="p-6 space-y-4">
-        {/* Bug 3 fix: caption_id always shown with explicit fallback */}
-        <h2 className="text-xl font-bold leading-snug">
+      <div className="p-8 space-y-6">
+        <h2 className="font-display text-3xl font-bold leading-snug uppercase text-[#111111]">
           {typedPhoto.caption_id ?? "Foto tanpa judul"}
         </h2>
 
-        {/* Bug 3 fix: caption_en always shown (no conditional) with explicit fallback */}
-        <p className="text-sm italic text-base-content/60 -mt-2">
+        <p className="text-lg font-bold italic text-[#111111] -mt-4 bg-[#88CCEE] border-2 border-[#111111] px-3 py-1 inline-block shadow-[2px_2px_0px_#111111]">
           {typedPhoto.caption_en ?? "Untitled photo"}
         </p>
 
-        <div className="flex items-center justify-between flex-wrap gap-2">
-          <Link
-            href={getPhotographerHref(typedPhoto)}
-            className="text-sm font-medium hover:text-primary hover:underline"
-          >
+        <div className="flex items-center justify-between flex-wrap gap-4 pt-2 border-t-2 border-[#111111]">
+          <Link href={getPhotographerHref(typedPhoto)} className="font-bold text-[#332288] underline hover:bg-[#332288] hover:text-[#E5E5E5] text-lg px-2 -ml-2">
             {getPhotographerLabel(typedPhoto)}
           </Link>
-          <time
-            dateTime={new Date(typedPhoto.created_at).toISOString().split("T")[0]}
-            className="text-xs text-base-content/50"
-          >
-            {new Date(typedPhoto.created_at).toLocaleDateString("id-ID", {
-              day: "numeric",
-              month: "long",
-              year: "numeric",
-            })}
+          <time dateTime={new Date(typedPhoto.created_at).toISOString().split("T")[0]} className="text-sm font-bold text-[#111111]/70">
+            {new Date(typedPhoto.created_at).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" })}
           </time>
         </div>
 
         {combinedTags.length > 0 && (
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-3">
             {combinedTags.map((tag, idx) => (
-              <span key={idx} className="badge badge-outline">
+              <span key={idx} className="bg-[#44AA99] text-[#111111] border-2 border-[#111111] font-bold text-sm px-3 py-1 shadow-[2px_2px_0px_#111111] uppercase">
                 {tag}
               </span>
             ))}
           </div>
         )}
 
-        {/*
-          Bug 2 fix: single CTA block at the bottom.
-          The old "Beli / Unduh Resolusi Tinggi" / "Tautan belum tersedia"
-          block was left in place when the new buttons were added, producing
-          two buttons. Replaced here with a single conditional that covers
-          both cases from the Feature 3 spec.
-        */}
-        {typedPhoto.microstock_url ? (
-          <a
-            href={typedPhoto.microstock_url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="btn btn-primary w-full"
-          >
-            Beli di Microstock
-          </a>
-        ) : (
-          <a
-            href={`/api/photos/download/${typedPhoto.id}`}
-            download
-            className="btn btn-success w-full"
-          >
-            Download Resolusi Asli
-          </a>
-        )}
+        <a
+          href={typedPhoto.microstock_url ?? `/api/photos/download/${typedPhoto.id}`}
+          download={!typedPhoto.microstock_url}
+          target={typedPhoto.microstock_url ? "_blank" : undefined}
+          rel={typedPhoto.microstock_url ? "noopener noreferrer" : undefined}
+          className={`btn w-full border-4 border-[#111111] rounded-none font-bold text-xl uppercase h-16 shadow-[6px_6px_0px_#111111] hover:translate-y-[2px] hover:shadow-[2px_2px_0px_#111111] transition-all ${
+            typedPhoto.microstock_url 
+              ? "bg-[#332288] hover:bg-[#20155c] text-[#E5E5E5]" 
+              : "bg-[#117733] hover:bg-[#0e5c27] text-[#E5E5E5]"
+          }`}
+        >
+          {typedPhoto.microstock_url ? "Beli di Microstock" : "Download Resolusi Asli"}
+        </a>
       </div>
     </ModalUI>
   );

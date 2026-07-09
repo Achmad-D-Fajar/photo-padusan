@@ -77,12 +77,9 @@ export default async function HomePage({ searchParams }: HomePageProps) {
 
   if (!supabaseUrl || !supabaseAnonKey) {
     return (
-      <main className="container mx-auto px-4 py-10">
-        <div role="alert" className="alert alert-error">
-          <span>
-            Konfigurasi server tidak lengkap: variabel lingkungan Supabase
-            tidak ditemukan.
-          </span>
+      <main className="container mx-auto px-4 py-12">
+        <div role="alert" className="alert rounded-none border-4 border-[#111111] shadow-[8px_8px_0px_#111111] bg-[#882255] text-white p-6 font-bold text-lg">
+          <span>Konfigurasi server tidak lengkap: variabel lingkungan Supabase tidak ditemukan.</span>
         </div>
       </main>
     );
@@ -99,8 +96,8 @@ export default async function HomePage({ searchParams }: HomePageProps) {
 
   if (error) {
     return (
-      <main className="container mx-auto px-4 py-10">
-        <div role="alert" className="alert alert-error">
+      <main className="container mx-auto px-4 py-12">
+        <div role="alert" className="alert rounded-none border-4 border-[#111111] shadow-[8px_8px_0px_#111111] bg-[#882255] text-white p-6 font-bold text-lg">
           <span>Gagal memuat foto: {error.message}</span>
         </div>
       </main>
@@ -109,44 +106,33 @@ export default async function HomePage({ searchParams }: HomePageProps) {
 
   const photoList = photos ?? [];
   const totalCount = count ?? 0;
-  const isFiltering =
-    keyword.length > 0 ||
-    scopes.length > 0 ||
-    startDate.length > 0 ||
-    endDate.length > 0;
+  const isFiltering = keyword.length > 0 || scopes.length > 0 || startDate.length > 0 || endDate.length > 0;
 
-  // Server Action inline: menutup variabel `filters` lewat closure
-  // sehingga klik "Load More" di browser selalu memakai filter & urutan
-  // yang sama dengan data yang sedang ditampilkan, tanpa perlu mengirim
-  // ulang seluruh state filter dari client ke server.
   async function loadMorePublicPhotos(offset: number, limit: number) {
     "use server";
-
     const supabaseForAction = await createClient();
     const { data, error: loadMoreErrorResult } = await buildPublicPhotosQuery(
       supabaseForAction,
       { ...filters, from: offset, to: offset + limit - 1 }
     );
-
     if (loadMoreErrorResult) {
       return { items: [], error: loadMoreErrorResult.message };
     }
-
     return { items: data ?? [], error: null };
   }
 
   return (
-    <main className="container mx-auto px-4 py-10">
-      <div className="mb-8 text-center">
-        <h1 className="text-4xl font-bold">Galeri Foto</h1>
-        <p className="text-base-content/70 mt-2 max-w-xl mx-auto">
-          Jelajahi karya fotografer komunitas kami. Klik &quot;Beli / Unduh
-          Resolusi Tinggi&quot; untuk mendukung mereka langsung di
-          microstock.
+    <main className="container mx-auto px-4 py-12">
+      <div className="mb-12 text-center flex flex-col items-center">
+        <h1 className="font-display font-bold text-5xl md:text-7xl uppercase tracking-tighter text-[#111111] mb-6">
+          Galeri Foto
+        </h1>
+        <p className="text-xl md:text-2xl font-bold text-[#111111] bg-white border-4 border-[#111111] shadow-[8px_8px_0px_#111111] p-6 max-w-3xl leading-relaxed">
+          Jelajahi karya fotografer komunitas kami. Klik tombol <span className="bg-[#117733] text-white px-2 py-1 uppercase tracking-tight">Unduh</span> atau <span className="bg-[#332288] text-white px-2 py-1 uppercase tracking-tight">Beli</span> untuk mendukung mereka secara langsung.
         </p>
       </div>
 
-      <div className="max-w-2xl mx-auto mb-6">
+      <div className="max-w-4xl mx-auto mb-12">
         <SearchBar
           initialKeyword={keyword}
           initialScopes={scopes}

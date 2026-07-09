@@ -4,28 +4,14 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { GeminiBilingualResult } from "@/lib/server/gemini-analysis";
 
-const MAX_SOURCE_SIZE = 20 * 1024 * 1024; // 20MB
+const MAX_SOURCE_SIZE = 20 * 1024 * 1024;
 const MAX_CONTEXT_LEN = 300;
 
-interface EditableAnalysis {
-  captionEn: string;
-  captionId: string;
-  tagsEnInput: string;
-  tagsIdInput: string;
-}
-
+interface EditableAnalysis { captionEn: string; captionId: string; tagsEnInput: string; tagsIdInput: string; }
 type Phase = "compose" | "analyzing" | "review" | "saving";
 
-function tagsToInput(tags: string[]): string {
-  return tags.join(", ");
-}
-
-function inputToTags(input: string): string[] {
-  return input
-    .split(",")
-    .map((t) => t.trim())
-    .filter((t) => t.length > 0);
-}
+function tagsToInput(tags: string[]): string { return tags.join(", "); }
+function inputToTags(input: string): string[] { return input.split(",").map((t) => t.trim()).filter((t) => t.length > 0); }
 
 export default function UploadForm() {
   const router = useRouter();
@@ -34,7 +20,6 @@ export default function UploadForm() {
   const [useAI, setUseAI] = useState(false);
   const [wantsMicrostockLink, setWantsMicrostockLink] = useState(true);
 
-  // Menghapus state kompresi canvas dan hanya menyimpan file aslinya
   const [originalFile, setOriginalFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [originalSize, setOriginalSize] = useState<number | null>(null);
@@ -50,9 +35,7 @@ export default function UploadForm() {
   const [copiedField, setCopiedField] = useState<string | null>(null);
 
   useEffect(() => {
-    return () => {
-      if (previewUrl) URL.revokeObjectURL(previewUrl);
-    };
+    return () => { if (previewUrl) URL.revokeObjectURL(previewUrl); };
   }, [previewUrl]);
 
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -60,22 +43,16 @@ export default function UploadForm() {
     if (previewUrl) URL.revokeObjectURL(previewUrl);
 
     if (!file) {
-      setOriginalFile(null);
-      setPreviewUrl(null);
-      setOriginalSize(null);
-      return;
+      setOriginalFile(null); setPreviewUrl(null); setOriginalSize(null); return;
     }
 
     if (!file.type.startsWith("image/")) {
-      setErrorMessage("File harus berupa gambar.");
-      return;
+      setErrorMessage("File harus berupa gambar."); return;
     }
     if (file.size > MAX_SOURCE_SIZE) {
-      setErrorMessage("Ukuran file maksimal 20MB.");
-      return;
+      setErrorMessage("Ukuran file maksimal 20MB."); return;
     }
 
-    // Bypass canvas pipeline sepenuhnya. Langsung render file asli.
     setOriginalFile(file);
     setPreviewUrl(URL.createObjectURL(file));
     setOriginalSize(file.size);
@@ -83,12 +60,7 @@ export default function UploadForm() {
     setErrorMessage("");
   }
 
-  function buildBaseFormData(
-    captionEn: string,
-    captionId: string,
-    tagsEn: string[],
-    tagsId: string[]
-  ): FormData {
+  function buildBaseFormData(captionEn: string, captionId: string, tagsEn: string[], tagsId: string[]): FormData {
     const fd = new FormData();
     fd.append("file", originalFile!, originalFile!.name); 
     fd.append("caption_en", captionEn.trim());
@@ -102,114 +74,62 @@ export default function UploadForm() {
   async function postToDraftRoute(fd: FormData) {
     const res = await fetch("/api/photos/draft", { method: "POST", body: fd });
     const result = await res.json();
-    if (!res.ok || !result.success) {
-      throw new Error(result.error || "Gagal menyimpan.");
-    }
+    if (!res.ok || !result.success) throw new Error(result.error || "Gagal menyimpan.");
   }
 
   async function handleManualSubmit() {
     if (!originalFile) return;
-    if (!manualCaption.trim()) {
-      setErrorMessage("Caption tidak boleh kosong.");
-      return;
-    }
-
-    setPhase("saving");
-    setErrorMessage("");
+    if (!manualCaption.trim()) { setErrorMessage("Caption tidak boleh kosong."); return; }
+    setPhase("saving"); setErrorMessage("");
 
     try {
       const parsedTagsId = inputToTags(manualTagsInput);
-
       const transRes = await fetch("/api/photos/translate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          caption_id: manualCaption,
-          tags_id: parsedTagsId,
-        }),
+        body: JSON.stringify({ caption_id: manualCaption, tags_id: parsedTagsId }),
       });
-      
       const transData = await transRes.json();
-      
-      if (!transRes.ok || !transData.success) {
-        throw new Error(transData.error || "Gagal menerjemahkan teks. Coba lagi.");
-      }
-
-      const fd = buildBaseFormData(
-        transData.data.caption_en,
-        manualCaption,
-        transData.data.tags_en,
-        parsedTagsId
-      );
-
+      if (!transRes.ok || !transData.success) throw new Error(transData.error || "Gagal menerjemahkan teks. Coba lagi.");
+      const fd = buildBaseFormData(transData.data.caption_en, manualCaption, transData.data.tags_en, parsedTagsId);
       await postToDraftRoute(fd);
-      router.push("/dashboard");
-      router.refresh();
+      router.push("/dashboard"); router.refresh();
     } catch (err) {
-      setPhase("compose");
-      setErrorMessage(
-        err instanceof Error ? err.message : "Terjadi kesalahan saat menyimpan. Coba lagi."
-      );
+      setPhase("compose"); setErrorMessage(err instanceof Error ? err.message : "Terjadi kesalahan saat menyimpan.");
     }
   }
 
   async function runAnalysis() {
     if (!originalFile) return;
-
-    setPhase("analyzing");
-    setErrorMessage("");
+    setPhase("analyzing"); setErrorMessage("");
 
     try {
       const fd = new FormData();
-      // Mengirimkan file asli ke AI agar terbaca sempurna
       fd.append("file", originalFile, originalFile.name);
       if (aiContext.trim()) fd.append("description", aiContext.trim());
 
-      const res = await fetch("/api/photos/analyze", {
-        method: "POST",
-        body: fd,
-      });
+      const res = await fetch("/api/photos/analyze", { method: "POST", body: fd });
       const result = await res.json();
-      if (!res.ok || !result.success)
-        throw new Error(result.error || "Analisis gagal.");
+      if (!res.ok || !result.success) throw new Error(result.error || "Analisis gagal.");
 
       const data = result.data; 
-      setEditableAnalysis({
-        captionEn: data.caption_en,
-        captionId: data.caption_id,
-        tagsEnInput: tagsToInput(data.tags_en),
-        tagsIdInput: tagsToInput(data.tags_id),
-      });
+      setEditableAnalysis({ captionEn: data.caption_en, captionId: data.caption_id, tagsEnInput: tagsToInput(data.tags_en), tagsIdInput: tagsToInput(data.tags_id) });
       setPhase("review");
     } catch (err) {
-      setPhase("compose");
-      setErrorMessage(
-        err instanceof Error ? err.message : "Terjadi kesalahan. Coba lagi."
-      );
+      setPhase("compose"); setErrorMessage(err instanceof Error ? err.message : "Terjadi kesalahan. Coba lagi.");
     }
   }
 
   async function handleSaveDraft() {
     if (!originalFile || !editableAnalysis) return;
-
-    setPhase("saving");
-    setErrorMessage("");
+    setPhase("saving"); setErrorMessage("");
 
     try {
-      const fd = buildBaseFormData(
-        editableAnalysis.captionEn,
-        editableAnalysis.captionId,
-        inputToTags(editableAnalysis.tagsEnInput),
-        inputToTags(editableAnalysis.tagsIdInput)
-      );
+      const fd = buildBaseFormData(editableAnalysis.captionEn, editableAnalysis.captionId, inputToTags(editableAnalysis.tagsEnInput), inputToTags(editableAnalysis.tagsIdInput));
       await postToDraftRoute(fd);
-      router.push("/dashboard");
-      router.refresh();
+      router.push("/dashboard"); router.refresh();
     } catch (err) {
-      setPhase("review");
-      setErrorMessage(
-        err instanceof Error ? err.message : "Terjadi kesalahan. Coba lagi."
-      );
+      setPhase("review"); setErrorMessage(err instanceof Error ? err.message : "Terjadi kesalahan. Coba lagi.");
     }
   }
 
@@ -217,417 +137,173 @@ export default function UploadForm() {
     try {
       await navigator.clipboard.writeText(text);
       setCopiedField(fieldKey);
-      setTimeout(
-        () => setCopiedField((prev) => (prev === fieldKey ? null : prev)),
-        1500
-      );
-    } catch {
-      // clipboard unavailable
-    }
+      setTimeout(() => setCopiedField((prev) => (prev === fieldKey ? null : prev)), 1500);
+    } catch { }
   }
 
   const isBusy = phase === "analyzing" || phase === "saving";
-  const saveActionLabel = wantsMicrostockLink
-    ? "Simpan sebagai Draf"
-    : "Publikasikan Sekarang";
+  const saveActionLabel = wantsMicrostockLink ? "Simpan sebagai Draf" : "Publikasikan Sekarang";
+
+  const inputClass = "file-input file-input-bordered w-full rounded-none border-4 border-[#111111] bg-white text-[#111111] text-lg font-bold h-16 shadow-[4px_4px_0px_#111111] focus:ring-4 focus:ring-[#44AA99]";
+  const textInputClass = "input input-bordered w-full rounded-none border-4 border-[#111111] bg-white text-[#111111] text-lg font-bold shadow-[4px_4px_0px_#111111] focus:ring-4 focus:ring-[#44AA99] p-4 h-auto";
+  const textareaClass = "textarea textarea-bordered w-full rounded-none border-4 border-[#111111] bg-white text-[#111111] text-lg font-bold shadow-[4px_4px_0px_#111111] focus:ring-4 focus:ring-[#44AA99] p-4";
+  const labelClass = "label-text font-bold text-xl text-[#111111] uppercase tracking-wide whitespace-normal break-words";
+  const subLabelClass = "label-text-alt font-bold text-[#111111] text-base whitespace-normal break-words";
+  const primaryBtnClass = "btn bg-[#117733] hover:bg-[#0e5c27] text-[#E5E5E5] border-4 border-[#111111] rounded-none font-bold text-xl uppercase h-16 shadow-[6px_6px_0px_#111111] hover:translate-y-[2px] hover:shadow-[4px_4px_0px_#111111] transition-all";
 
   return (
     <>
-      <div className="card bg-base-100 border border-base-300 shadow-md rounded-none">
-        <div className="card-body gap-4">
+      <div className="card bg-white border-4 border-[#111111] shadow-[12px_12px_0px_#111111] rounded-none p-4 sm:p-8">
+        <div className="card-body gap-8 p-0">
           <div className="form-control">
-            <label className="label" htmlFor="file-input">
-              <span className="label-text">Pilih gambar (maks. 20MB)</span>
+            <label className="label items-start p-0 mb-2" htmlFor="file-input">
+              <span className={labelClass}>Pilih gambar (maks. 20MB)</span>
             </label>
-            <input
-              id="file-input"
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              onChange={handleFileChange}
-              className="file-input file-input-bordered w-full rounded-none"
-              disabled={isBusy}
-            />
+            <input id="file-input" ref={fileInputRef} type="file" accept="image/*" onChange={handleFileChange} className={inputClass} disabled={isBusy} />
           </div>
 
           {previewUrl && originalFile && (
-            <div>
-              <div className="overflow-hidden border border-base-300 aspect-square w-full max-w-xs mx-auto bg-base-200">
-                <img
-                  src={previewUrl}
-                  alt="Pratinjau"
-                  className="w-full h-full object-cover"
-                />
+            <div className="bg-[#E5E5E5] border-4 border-[#111111] p-6 shadow-[6px_6px_0px_#111111]">
+              <div className="overflow-hidden border-4 border-[#111111] aspect-square w-full max-w-sm mx-auto bg-white shadow-[4px_4px_0px_#111111]">
+                <img src={previewUrl} alt="Pratinjau" className="w-full h-full object-cover" />
               </div>
               {originalSize !== null && (
-                <p className="text-xs text-center text-base-content/50 mt-2">
-                  {(originalSize / 1024 / 1024).toFixed(2)} MB (Resolusi Asli)
+                <p className="text-lg font-bold text-center text-[#111111] mt-6 uppercase">
+                  Ukuran Asli: {(originalSize / 1024 / 1024).toFixed(2)} MB
                 </p>
               )}
             </div>
           )}
 
-          <div className="divider my-0" />
+          <div className="border-b-4 border-[#111111] w-full" />
 
-          <label className="label cursor-pointer justify-start gap-3">
-            <input
-              type="checkbox"
-              checked={useAI}
-              onChange={(e) => {
-                setUseAI(e.target.checked);
-                setErrorMessage("");
-              }}
-              className="checkbox rounded-none"
-              disabled={isBusy}
-            />
-            <span className="label-text font-medium">
-              Buat caption dan tags dengan AI
-            </span>
-          </label>
+          <div className="form-control bg-[#E5E5E5] border-4 border-[#111111] p-6 shadow-[4px_4px_0px_#111111]">
+            <label className="label cursor-pointer justify-start gap-4 p-0 items-start">
+              <input type="checkbox" checked={useAI} onChange={(e) => { setUseAI(e.target.checked); setErrorMessage(""); }} className="checkbox rounded-none border-4 border-[#111111] w-8 h-8 focus:ring-4 focus:ring-[#44AA99] shrink-0 mt-0.5" disabled={isBusy} />
+              <span className="font-display font-bold text-2xl text-[#111111] uppercase tracking-tight whitespace-normal break-words leading-tight">Gunakan Bantuan AI</span>
+            </label>
+          </div>
 
           {!useAI && (
-            <>
+            <div className="space-y-6">
               <div className="form-control">
-                <label className="label" htmlFor="manual-caption">
-                  <span className="label-text">Caption Manual</span>
-                </label>
-                <textarea
-                  id="manual-caption"
-                  value={manualCaption}
-                  onChange={(e) => setManualCaption(e.target.value)}
-                  className="textarea textarea-bordered w-full rounded-none"
-                  rows={3}
-                  placeholder="Deskripsikan foto ini..."
-                  disabled={isBusy}
-                />
+                <label className="label items-start p-0 mb-2" htmlFor="manual-caption"><span className={labelClass}>Caption Manual</span></label>
+                <textarea id="manual-caption" value={manualCaption} onChange={(e) => setManualCaption(e.target.value)} className={textareaClass} rows={4} placeholder="Tulis deskripsi..." disabled={isBusy} />
               </div>
-
               <div className="form-control">
-                <label className="label" htmlFor="manual-tags">
-                  <span className="label-text">Tags Manual</span>
-                </label>
-                <input
-                  id="manual-tags"
-                  type="text"
-                  value={manualTagsInput}
-                  onChange={(e) => setManualTagsInput(e.target.value)}
-                  className="input input-bordered w-full rounded-none"
-                  placeholder="sawah, pagi, Padusan, Mojokerto"
-                  disabled={isBusy}
-                />
-                <label className="label">
-                  <span className="label-text-alt text-base-content/60">
-                    Pisahkan tag dengan koma.
-                  </span>
-                </label>
+                <label className="label items-start p-0 mb-2" htmlFor="manual-tags"><span className={labelClass}>Tags Manual</span></label>
+                <input id="manual-tags" type="text" value={manualTagsInput} onChange={(e) => setManualTagsInput(e.target.value)} className={textInputClass} placeholder="sawah, desa, pagi" disabled={isBusy} />
+                <label className="label p-0 mt-2"><span className={subLabelClass}>Pisahkan tag dengan koma.</span></label>
               </div>
-            </>
+            </div>
           )}
 
           {useAI && (
             <div className="form-control">
-              <label className="label" htmlFor="ai-context">
-                <span className="label-text">
-                  Konteks Foto (Opsional) — Bantu AI mengenali foto ini
-                </span>
-              </label>
-              <textarea
-                id="ai-context"
-                value={aiContext}
-                onChange={(e) =>
-                  setAiContext(e.target.value.slice(0, MAX_CONTEXT_LEN))
-                }
-                className="textarea textarea-bordered w-full rounded-none"
-                rows={3}
-                placeholder="Contoh: foto sawah pagi hari dengan kabut tipis di lereng gunung"
-                disabled={isBusy}
-                maxLength={MAX_CONTEXT_LEN}
-              />
-              <label className="label">
-                <span className="label-text-alt text-base-content/60">
-                  Konteks membantu AI menghasilkan caption yang lebih akurat.
-                </span>
-                <span className="label-text-alt">
-                  {aiContext.length}/{MAX_CONTEXT_LEN}
-                </span>
-              </label>
+              <label className="label items-start p-0 mb-2" htmlFor="ai-context"><span className={labelClass}>Konteks Spesifik (Opsional)</span></label>
+              <textarea id="ai-context" value={aiContext} onChange={(e) => setAiContext(e.target.value.slice(0, MAX_CONTEXT_LEN))} className={textareaClass} rows={4} placeholder="Misal: 'Ini adalah upacara adat di desa...'" disabled={isBusy} maxLength={MAX_CONTEXT_LEN} />
+              <label className="label p-0 mt-2"><span className={subLabelClass}>Karakter: {aiContext.length}/{MAX_CONTEXT_LEN}</span></label>
             </div>
           )}
 
-          <div className="divider my-0" />
+          <div className="border-b-4 border-[#111111] w-full" />
 
-          <label className="label cursor-pointer justify-start gap-3">
-            <input
-              type="checkbox"
-              checked={wantsMicrostockLink}
-              onChange={(e) => setWantsMicrostockLink(e.target.checked)}
-              className="checkbox rounded-none"
-              disabled={isBusy}
-            />
-            <span className="label-text font-medium">
-              Akan masukkan link eksternal (Microstock)
-            </span>
-          </label>
-
-          {wantsMicrostockLink ? (
-            <p className="text-xs text-base-content/60 -mt-2">
-              Foto akan disimpan sebagai{" "}
-              <span className="badge badge-warning badge-sm rounded-none">Draf</span> — tambahkan
-              link microstock di halaman Edit sebelum dipublikasikan.
+          <div className="form-control bg-[#88CCEE] border-4 border-[#111111] p-4 sm:p-6 shadow-[4px_4px_0px_#111111]">
+            <label className="label cursor-pointer justify-start gap-3 sm:gap-4 p-0 items-start">
+              <input type="checkbox" checked={wantsMicrostockLink} onChange={(e) => setWantsMicrostockLink(e.target.checked)} className="checkbox rounded-none border-4 border-[#111111] w-8 h-8 focus:ring-4 focus:ring-[#111111] shrink-0 mt-0.5" disabled={isBusy} />
+              <span className="font-bold text-lg sm:text-xl text-[#111111] uppercase whitespace-normal break-words leading-tight">Saya akan menambahkan link Microstock</span>
+            </label>
+            <p className="text-base sm:text-lg font-bold text-[#111111] mt-4 leading-snug whitespace-normal break-words">
+              {wantsMicrostockLink ? "Status: DRAF (Tidak akan muncul di publik sampai link microstock dimasukkan di halaman Edit)." : "Status: PUBLIK (Bisa diunduh gratis oleh semua orang)."}
             </p>
-          ) : (
-            <p className="text-xs text-base-content/60 -mt-2">
-              Foto akan langsung{" "}
-              <span className="badge badge-success badge-sm rounded-none">Dipublikasikan</span>{" "}
-              di platform dan bisa diunduh gratis oleh pengunjung.
-            </p>
-          )}
+          </div>
 
           {errorMessage && phase === "compose" && (
-            <div role="alert" className="alert alert-error rounded-none">
+            <div role="alert" className="alert rounded-none border-4 border-[#111111] bg-[#882255] text-white font-bold text-lg p-6 shadow-[6px_6px_0px_#111111]">
               <span>{errorMessage}</span>
             </div>
           )}
 
           {useAI ? (
-            <button
-              type="button"
-              onClick={runAnalysis}
-              className="btn bg-[#117733] hover:bg-[#0e5c27] text-[#E5E5E5] rounded-none"
-              disabled={!originalFile || isBusy}
-            >
-              {phase === "analyzing" ? (
-                <>
-                  <span className="loading loading-spinner loading-sm" />
-                  Menganalisis dengan AI...
-                </>
-              ) : (
-                "Analisis dengan AI"
-              )}
+            <button type="button" onClick={runAnalysis} className={primaryBtnClass} disabled={!originalFile || isBusy}>
+              {phase === "analyzing" ? "Sedang Menganalisis..." : "JALANKAN ANALISIS AI"}
             </button>
           ) : (
-            <button
-              type="button"
-              onClick={handleManualSubmit}
-              className="btn bg-[#117733] hover:bg-[#0e5c27] text-[#E5E5E5] rounded-none"
-              disabled={!originalFile || isBusy}
-            >
-              {phase === "saving" ? (
-                <>
-                  <span className="loading loading-spinner loading-sm" />
-                  Menerjemahkan & Menyimpan...
-                </>
-              ) : (
-                saveActionLabel
-              )}
+            <button type="button" onClick={handleManualSubmit} className={primaryBtnClass} disabled={!originalFile || isBusy}>
+              {phase === "saving" ? "Menyimpan..." : saveActionLabel}
             </button>
           )}
         </div>
       </div>
 
-      {(phase === "review" || (phase === "saving" && editableAnalysis)) &&
-        editableAnalysis && (
-          <dialog className="modal modal-open">
-            <div className="modal-box max-w-2xl w-full rounded-none">
-              <h3 className="font-bold text-lg mb-1">Tinjau &amp; Edit Konten AI</h3>
-              <p className="text-sm text-base-content/70 mb-5">
-                Edit caption dan tag sebelum disimpan. Klik{" "}
-                <kbd className="kbd kbd-xs rounded-none border-[#111111]">Salin</kbd> untuk menyalin ke clipboard.
-              </p>
-
-              <div className="flex flex-col gap-5">
-                <div className="form-control">
-                  <label className="label" htmlFor="edit-caption-en">
-                    <span className="label-text font-semibold">
-                      Caption (English)
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        handleCopy(editableAnalysis.captionEn, "caption_en")
-                      }
-                      className="btn btn-xs btn-ghost rounded-none"
-                      disabled={phase === "saving"}
-                    >
-                      {copiedField === "caption_en" ? "✓ Tersalin!" : "Salin"}
-                    </button>
-                  </label>
-                  <textarea
-                    id="edit-caption-en"
-                    value={editableAnalysis.captionEn}
-                    onChange={(e) =>
-                      setEditableAnalysis((prev) =>
-                        prev ? { ...prev, captionEn: e.target.value } : prev
-                      )
-                    }
-                    className="textarea textarea-bordered w-full rounded-none"
-                    rows={2}
-                    disabled={phase === "saving"}
-                  />
-                </div>
-
-                <div className="form-control">
-                  <label className="label" htmlFor="edit-caption-id">
-                    <span className="label-text font-semibold">
-                      Caption (Bahasa Indonesia)
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        handleCopy(editableAnalysis.captionId, "caption_id")
-                      }
-                      className="btn btn-xs btn-ghost rounded-none"
-                      disabled={phase === "saving"}
-                    >
-                      {copiedField === "caption_id" ? "✓ Tersalin!" : "Salin"}
-                    </button>
-                  </label>
-                  <textarea
-                    id="edit-caption-id"
-                    value={editableAnalysis.captionId}
-                    onChange={(e) =>
-                      setEditableAnalysis((prev) =>
-                        prev ? { ...prev, captionId: e.target.value } : prev
-                      )
-                    }
-                    className="textarea textarea-bordered w-full rounded-none"
-                    rows={2}
-                    disabled={phase === "saving"}
-                  />
-                </div>
-
-                <div className="form-control">
-                  <label className="label" htmlFor="edit-tags-en">
-                    <span className="label-text font-semibold">
-                      Tags (English)
-                      <span className="text-base-content/50 font-normal ml-2">
-                        — pisahkan dengan koma
-                      </span>
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        handleCopy(editableAnalysis.tagsEnInput, "tags_en")
-                      }
-                      className="btn btn-xs btn-ghost rounded-none"
-                      disabled={phase === "saving"}
-                    >
-                      {copiedField === "tags_en" ? "✓ Tersalin!" : "Salin"}
-                    </button>
-                  </label>
-                  <textarea
-                    id="edit-tags-en"
-                    value={editableAnalysis.tagsEnInput}
-                    onChange={(e) =>
-                      setEditableAnalysis((prev) =>
-                        prev ? { ...prev, tagsEnInput: e.target.value } : prev
-                      )
-                    }
-                    className="textarea textarea-bordered w-full font-mono text-sm rounded-none"
-                    rows={3}
-                    disabled={phase === "saving"}
-                  />
-                  <label className="label">
-                    <span className="label-text-alt text-base-content/60">
-                      {inputToTags(editableAnalysis.tagsEnInput).length} tags
-                    </span>
-                  </label>
-                </div>
-
-                <div className="form-control">
-                  <label className="label" htmlFor="edit-tags-id">
-                    <span className="label-text font-semibold">
-                      Tags (Bahasa Indonesia)
-                      <span className="text-base-content/50 font-normal ml-2">
-                        — pisahkan dengan koma
-                      </span>
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        handleCopy(editableAnalysis.tagsIdInput, "tags_id")
-                      }
-                      className="btn btn-xs btn-ghost rounded-none"
-                      disabled={phase === "saving"}
-                    >
-                      {copiedField === "tags_id" ? "✓ Tersalin!" : "Salin"}
-                    </button>
-                  </label>
-                  <textarea
-                    id="edit-tags-id"
-                    value={editableAnalysis.tagsIdInput}
-                    onChange={(e) =>
-                      setEditableAnalysis((prev) =>
-                        prev ? { ...prev, tagsIdInput: e.target.value } : prev
-                      )
-                    }
-                    className="textarea textarea-bordered w-full font-mono text-sm rounded-none"
-                    rows={3}
-                    disabled={phase === "saving"}
-                  />
-                  <label className="label">
-                    <span className="label-text-alt text-base-content/60">
-                      {inputToTags(editableAnalysis.tagsIdInput).length} tags
-                    </span>
-                  </label>
-                </div>
+      {(phase === "review" || (phase === "saving" && editableAnalysis)) && editableAnalysis && (
+        <dialog className="modal modal-open bg-black/60 backdrop-blur-sm">
+          <div className="modal-box max-w-3xl w-full rounded-none border-4 border-[#111111] bg-white p-6 sm:p-10 shadow-[16px_16px_0px_#111111]">
+            <h3 className="font-display font-bold text-4xl uppercase border-b-4 border-[#111111] pb-4 mb-6">Tinjau & Edit AI</h3>
+            
+            <div className="flex flex-col gap-8">
+              <div className="form-control">
+                <label className="label items-end p-0 mb-2" htmlFor="edit-caption-en">
+                  <span className={labelClass}>Caption (English)</span>
+                  <button type="button" onClick={() => handleCopy(editableAnalysis.captionEn, "caption_en")} className="btn bg-transparent border-2 border-[#111111] rounded-none shadow-[2px_2px_0px_#111111] hover:bg-[#111111] hover:text-[#E5E5E5] font-bold h-10 min-h-0" disabled={phase === "saving"}>
+                    {copiedField === "caption_en" ? "✓ DISALIN" : "SALIN"}
+                  </button>
+                </label>
+                <textarea id="edit-caption-en" value={editableAnalysis.captionEn} onChange={(e) => setEditableAnalysis((prev) => prev ? { ...prev, captionEn: e.target.value } : prev)} className={textareaClass} rows={3} disabled={phase === "saving"} />
               </div>
 
-              {errorMessage && (
-                <div role="alert" className="alert alert-error mt-4 rounded-none">
-                  <span>{errorMessage}</span>
-                </div>
-              )}
+              <div className="form-control">
+                <label className="label items-end p-0 mb-2" htmlFor="edit-caption-id">
+                  <span className={labelClass}>Caption (Indonesia)</span>
+                  <button type="button" onClick={() => handleCopy(editableAnalysis.captionId, "caption_id")} className="btn bg-transparent border-2 border-[#111111] rounded-none shadow-[2px_2px_0px_#111111] hover:bg-[#111111] hover:text-[#E5E5E5] font-bold h-10 min-h-0" disabled={phase === "saving"}>
+                    {copiedField === "caption_id" ? "✓ DISALIN" : "SALIN"}
+                  </button>
+                </label>
+                <textarea id="edit-caption-id" value={editableAnalysis.captionId} onChange={(e) => setEditableAnalysis((prev) => prev ? { ...prev, captionId: e.target.value } : prev)} className={textareaClass} rows={3} disabled={phase === "saving"} />
+              </div>
 
-              {!wantsMicrostockLink && (
-                <div role="alert" className="alert alert-info mt-4 rounded-none">
-                  <span className="text-sm">
-                    Foto akan langsung <strong>dipublikasikan</strong> sebagai konten
-                    gratis. Anda dapat menambahkan link microstock di halaman Edit
-                    kapan saja.
-                  </span>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                <div className="form-control">
+                  <label className="label items-end p-0 mb-2" htmlFor="edit-tags-en">
+                    <span className={labelClass}>Tags (EN)</span>
+                    <button type="button" onClick={() => handleCopy(editableAnalysis.tagsEnInput, "tags_en")} className="btn bg-transparent border-2 border-[#111111] rounded-none shadow-[2px_2px_0px_#111111] hover:bg-[#111111] hover:text-[#E5E5E5] font-bold h-10 min-h-0" disabled={phase === "saving"}>
+                      {copiedField === "tags_en" ? "✓ DISALIN" : "SALIN"}
+                    </button>
+                  </label>
+                  <textarea id="edit-tags-en" value={editableAnalysis.tagsEnInput} onChange={(e) => setEditableAnalysis((prev) => prev ? { ...prev, tagsEnInput: e.target.value } : prev)} className={textareaClass} rows={4} disabled={phase === "saving"} />
                 </div>
-              )}
-
-              <div className="modal-action flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setPhase("compose");
-                    setErrorMessage("");
-                  }}
-                  className="btn btn-ghost rounded-none"
-                  disabled={phase === "saving"}
-                >
-                  ← Ubah Gambar
-                </button>
-                <button
-                  type="button"
-                  onClick={runAnalysis}
-                  className="btn btn-outline rounded-none border-[#111111] text-[#111111]"
-                  disabled={phase === "saving"}
-                >
-                  Analisis Ulang
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSaveDraft}
-                  className="btn bg-[#117733] hover:bg-[#0e5c27] text-[#E5E5E5] rounded-none"
-                  disabled={phase === "saving"}
-                >
-                  {phase === "saving" ? (
-                    <>
-                      <span className="loading loading-spinner loading-sm" />
-                      Menyimpan...
-                    </>
-                  ) : (
-                    saveActionLabel
-                  )}
-                </button>
+                <div className="form-control">
+                  <label className="label items-end p-0 mb-2" htmlFor="edit-tags-id">
+                    <span className={labelClass}>Tags (ID)</span>
+                    <button type="button" onClick={() => handleCopy(editableAnalysis.tagsIdInput, "tags_id")} className="btn bg-transparent border-2 border-[#111111] rounded-none shadow-[2px_2px_0px_#111111] hover:bg-[#111111] hover:text-[#E5E5E5] font-bold h-10 min-h-0" disabled={phase === "saving"}>
+                      {copiedField === "tags_id" ? "✓ DISALIN" : "SALIN"}
+                    </button>
+                  </label>
+                  <textarea id="edit-tags-id" value={editableAnalysis.tagsIdInput} onChange={(e) => setEditableAnalysis((prev) => prev ? { ...prev, tagsIdInput: e.target.value } : prev)} className={textareaClass} rows={4} disabled={phase === "saving"} />
+                </div>
               </div>
             </div>
-          </dialog>
-        )}
+
+            {errorMessage && (
+              <div role="alert" className="alert rounded-none border-4 border-[#111111] bg-[#882255] text-white font-bold text-lg p-6 shadow-[6px_6px_0px_#111111] mt-8">
+                <span>{errorMessage}</span>
+              </div>
+            )}
+
+            <div className="modal-action flex-col sm:flex-row gap-4 mt-10">
+              <button type="button" onClick={() => { setPhase("compose"); setErrorMessage(""); }} className="btn bg-[#E5E5E5] hover:bg-[#111111] hover:text-white text-[#111111] border-4 border-[#111111] rounded-none font-bold text-xl uppercase h-16 shadow-[4px_4px_0px_#111111]" disabled={phase === "saving"}>
+                UBAH GAMBAR
+              </button>
+              <button type="button" onClick={runAnalysis} className="btn bg-transparent hover:bg-[#E5E5E5] text-[#111111] border-4 border-[#111111] rounded-none font-bold text-xl uppercase h-16 shadow-[4px_4px_0px_#111111]" disabled={phase === "saving"}>
+                ULANGI AI
+              </button>
+              <button type="button" onClick={handleSaveDraft} className={`${primaryBtnClass} flex-1`} disabled={phase === "saving"}>
+                {phase === "saving" ? "MENYIMPAN..." : saveActionLabel}
+              </button>
+            </div>
+          </div>
+        </dialog>
+      )}
     </>
   );
 }

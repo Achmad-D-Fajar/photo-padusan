@@ -8,15 +8,10 @@ export default function LogoutButton() {
 
   async function handleLogout() {
     setIsLoggingOut(true);
-
     try {
       const supabase = createClient();
       await supabase.auth.signOut();
     } finally {
-      // Hard reload (bukan router.refresh()) memastikan seluruh state
-      // client — termasuk apa pun yang mungkin di-cache oleh Server
-      // Component atau App Router — benar-benar bersih, sehingga sesi
-      // yang sudah signOut tidak "terlihat" lagi di mana pun pada UI.
       window.location.href = "/";
     }
   }
@@ -25,16 +20,16 @@ export default function LogoutButton() {
     <button
       type="button"
       onClick={handleLogout}
-      className="w-full text-left"
+      className="w-full text-left font-bold text-xl uppercase tracking-widest text-[#882255] border-2 border-transparent hover:border-[#882255] bg-[#E5E5E5] hover:bg-[#882255] hover:text-white px-4 py-3 transition-colors focus:outline-none focus:ring-4 focus:ring-[#882255]"
       disabled={isLoggingOut}
     >
       {isLoggingOut ? (
-        <span className="flex items-center gap-2">
-          <span className="loading loading-spinner loading-xs"></span>
-          Keluar...
+        <span className="flex items-center gap-3">
+          <span className="loading loading-spinner loading-sm"></span>
+          KELUAR...
         </span>
       ) : (
-        "Keluar"
+        "KELUAR"
       )}
     </button>
   );

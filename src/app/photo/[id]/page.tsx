@@ -8,13 +8,8 @@ interface PhotoPageProps {
   params: Promise<{ id: string }>;
 }
 
-const UUID_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
-const SITE_URL =
-  process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") ??
-  "https://paduphoto.vercel.app"; // Fallback for local dev or missing env
-
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") ?? "https://paduphoto.vercel.app"; 
 const LICENSE_URL = "https://creativecommons.org/licenses/by-nc-nd/4.0/";
 
 async function getPhoto(id: string) {
@@ -29,9 +24,7 @@ async function getPhoto(id: string) {
   return photo;
 }
 
-export async function generateMetadata({
-  params,
-}: PhotoPageProps): Promise<Metadata> {
+export async function generateMetadata({ params }: PhotoPageProps): Promise<Metadata> {
   const { id } = await params;
   if (!UUID_RE.test(id)) return { title: "Foto tidak ditemukan" };
 
@@ -39,7 +32,6 @@ export async function generateMetadata({
   if (!photo) return { title: "Foto tidak ditemukan" };
 
   const photographerName = photo.full_name || `@${photo.display_name}`;
-  // Bilingual title: Indonesian first for local SEO signal, English for global
   const bilingualTitle = `${photo.caption_id ?? photo.caption_en} | ${photo.caption_en ?? photo.caption_id}`;
 
   return {
@@ -50,9 +42,7 @@ export async function generateMetadata({
       url: `${SITE_URL}/photo/${photo.id}`,
       title: bilingualTitle,
       description: `Foto oleh ${photographerName}`,
-      images: photo.thumbnail_url
-        ? [{ url: photo.thumbnail_url, alt: `${photo.caption_id} | ${photo.caption_en}` }]
-        : [],
+      images: photo.thumbnail_url ? [{ url: photo.thumbnail_url, alt: `${photo.caption_id} | ${photo.caption_en}` }] : [],
       siteName: "PaduPhoto",
     },
     twitter: {
@@ -77,164 +67,127 @@ export default async function PhotoPage({ params }: PhotoPageProps) {
   const photoPageUrl        = `${SITE_URL}/photo/${photo.id}`;
   const uploadDateIso       = new Date(photo.created_at).toISOString().split("T")[0];
 
-  // Deduplicated tag union — Indonesian tags first so local keywords appear early
-  const combinedTags = [
-    ...new Set([
-      ...(photo.tags_id ?? []),
-      ...(photo.tags_en ?? []),
-    ]),
-  ];
+  const combinedTags = [...new Set([...(photo.tags_id ?? []), ...(photo.tags_en ?? [])])];
 
-  // JSON-LD with bilingual signals for Google Image Search Licensable badge
   const jsonLd = {
     "@context": "https://schema.org",
     "@type": "ImageObject",
     "@id": photoPageUrl,
-    name: photo.caption_en,         // English name for international crawlers
-    description: photo.caption_id,  // Indonesian description for local SEO
+    name: photo.caption_en,
+    description: photo.caption_id,
     contentUrl: photo.thumbnail_url ?? "",
     thumbnailUrl: photo.thumbnail_url ?? "",
     keywords: combinedTags.join(", "),
     uploadDate: uploadDateIso,
-    creator: {
-      "@type": "Person",
-      name: photographerName,
-      url: photographerPageUrl,
-    },
-    copyrightHolder: {
-      "@type": "Person",
-      name: photographerName,
-      url: photographerPageUrl,
-    },
+    creator: { "@type": "Person", name: photographerName, url: photographerPageUrl },
+    copyrightHolder: { "@type": "Person", name: photographerName, url: photographerPageUrl },
     copyrightYear: new Date(photo.created_at).getUTCFullYear(),
     license: LICENSE_URL,
     acquireLicensePage: photo.microstock_url ?? photoPageUrl,
     creditText: `${photographerName} / PaduPhoto - Desa Padusan`,
-    publisher: {
-      "@type": "Organization",
-      name: "PaduPhoto",
-      url: SITE_URL,
-    },
+    publisher: { "@type": "Organization", name: "PaduPhoto", url: SITE_URL },
     url: photoPageUrl,
   };
 
   return (
     <>
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
-      />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
 
-      <main className="container mx-auto px-4 py-10 max-w-3xl">
-        <nav className="text-sm breadcrumbs mb-6">
-          <ul>
-            <li>
-              <Link href="/">PaduPhoto</Link>
-            </li>
-            <li>
-              <Link href={`/photographer/${photo.display_name}`}>
-                {photographerName}
-              </Link>
-            </li>
-            <li className="text-base-content/60 truncate max-w-xs">
-              {photo.caption_id ?? photo.caption_en}
-            </li>
-          </ul>
+      <main className="container mx-auto px-4 py-12 max-w-4xl">
+        <nav className="text-lg font-bold mb-8 flex flex-wrap gap-2 items-center">
+          <Link href="/" className="text-[#332288] underline hover:bg-[#332288] hover:text-[#E5E5E5] px-2 py-1 transition-colors border-2 border-transparent focus:border-[#111111]">
+            PaduPhoto
+          </Link>
+          <span>/</span>
+          <Link href={`/photographer/${photo.display_name}`} className="text-[#332288] underline hover:bg-[#332288] hover:text-[#E5E5E5] px-2 py-1 transition-colors border-2 border-transparent focus:border-[#111111]">
+            {photographerName}
+          </Link>
+          <span>/</span>
+          <span className="bg-[#111111] text-white px-3 py-1 truncate max-w-[200px] sm:max-w-xs uppercase tracking-tight">
+            FOTO
+          </span>
         </nav>
 
-        <div className="card bg-base-100 border border-base-300 shadow-md overflow-hidden">
-          <figure className="bg-base-200">
+        <div className="card bg-white border-4 border-[#111111] shadow-[12px_12px_0px_#111111] rounded-none overflow-hidden">
+          <figure className="bg-[#E5E5E5] border-b-4 border-[#111111] p-4 sm:p-8">
             {photo.thumbnail_url && (
               <ProtectedImage
                 src={photo.thumbnail_url}
-                // Bilingual alt: Indonesian for local image search, English for global
                 alt={`${photo.caption_id} | ${photo.caption_en}`}
-                className="w-full max-h-[70vh] object-contain"
+                className="w-full max-h-[70vh] object-contain border-2 border-[#111111] shadow-[4px_4px_0px_#111111] bg-white"
               />
             )}
           </figure>
 
-          <div className="card-body">
-            {/* Indonesian caption as h1 — primary SEO signal for local search */}
-            <h1 className="text-2xl font-bold leading-snug">
+          <div className="p-6 sm:p-10">
+            <h1 className="font-display text-4xl sm:text-5xl font-bold leading-tight uppercase text-[#111111]">
               {photo.caption_id ?? "Tanpa judul"}
             </h1>
 
-            {/* English caption as h2 — secondary signal for global/microstock search */}
             {photo.caption_en && (
-              <h2 className="text-base font-normal text-base-content/60 mt-1">
+              <h2 className="text-xl font-bold text-[#111111] bg-[#88CCEE] border-2 border-[#111111] px-4 py-2 mt-4 inline-block shadow-[4px_4px_0px_#111111]">
                 {photo.caption_en}
               </h2>
             )}
 
-            <div className="flex items-center justify-between flex-wrap gap-2 text-sm mt-3">
-              <Link
-                href={`/photographer/${photo.display_name}`}
-                className="hover:text-primary hover:underline font-medium"
-              >
-                {photographerName}
-              </Link>
-              <time
-                dateTime={uploadDateIso}
-                className="text-base-content/50 text-xs"
-              >
-                {new Date(photo.created_at).toLocaleDateString("id-ID", {
-                  day: "numeric",
-                  month: "long",
-                  year: "numeric",
-                })}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 text-lg mt-8 p-4 bg-[#E5E5E5] border-2 border-[#111111]">
+              <div className="flex flex-col">
+                <span className="text-sm font-bold uppercase tracking-widest text-[#111111]">Fotografer</span>
+                <Link
+                  href={`/photographer/${photo.display_name}`}
+                  className="text-[#332288] font-bold text-2xl hover:bg-[#332288] hover:text-[#E5E5E5] px-2 -mx-2 transition-colors"
+                >
+                  {photographerName}
+                </Link>
+              </div>
+              <time dateTime={uploadDateIso} className="text-[#111111] font-bold text-xl sm:text-right border-t-2 sm:border-t-0 sm:border-l-2 border-[#111111] pt-2 sm:pt-0 sm:pl-4">
+                {new Date(photo.created_at).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" })}
               </time>
             </div>
 
-            {/* Combined deduplicated tags from both languages */}
             {combinedTags.length > 0 && (
-              <div className="flex flex-wrap gap-2 mt-4">
-                {combinedTags.map((tag, idx) => (
-                  <span key={idx} className="badge badge-outline">
-                    {tag}
-                  </span>
-                ))}
+              <div className="mt-8">
+                <h3 className="font-bold text-sm uppercase tracking-widest mb-3">Tags</h3>
+                <div className="flex flex-wrap gap-3">
+                  {combinedTags.map((tag, idx) => (
+                    <span key={idx} className="badge bg-[#44AA99] text-[#111111] border-2 border-[#111111] rounded-none font-bold text-base px-4 py-4 shadow-[4px_4px_0px_#111111] hover:bg-[#111111] hover:text-[#44AA99] transition-colors cursor-default">
+                      {tag}
+                    </span>
+                  ))}
+                </div>
               </div>
             )}
 
-            <div className="card-actions mt-6">
+            <div className="mt-10 pt-8 border-t-4 border-[#111111]">
               {photo.microstock_url ? (
-                // Microstock photo: external purchase link
                 <a
                   href={photo.microstock_url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="btn btn-primary flex-1"
+                  className="btn bg-[#332288] hover:bg-[#20155c] text-[#E5E5E5] border-2 border-[#111111] rounded-none font-bold text-xl sm:text-2xl h-auto py-4 shadow-[6px_6px_0px_#111111] hover:translate-y-[2px] hover:shadow-[4px_4px_0px_#111111] transition-all w-full uppercase"
                 >
-                  Beli di Microstock
+                  Beli Resolusi Tinggi di Microstock
                 </a>
               ) : (
-                // Platform-only photo: force-download through our proxy route.
-                // `download` attribute hints to the browser; the server enforces
-                // it via Content-Disposition: attachment regardless.
                 <a
                   href={`/api/photos/download/${photo.id}`}
                   download
-                  className="btn btn-success flex-1"
+                  className="btn bg-[#117733] hover:bg-[#0e5c27] text-[#E5E5E5] border-2 border-[#111111] rounded-none font-bold text-xl sm:text-2xl h-auto py-4 shadow-[6px_6px_0px_#111111] hover:translate-y-[2px] hover:shadow-[4px_4px_0px_#111111] transition-all w-full uppercase"
                 >
-                  Download Resolusi Asli
+                  Download Gratis (Resolusi Asli)
                 </a>
               )}
             </div>
 
-            <p className="text-xs text-base-content/40 mt-4">
-              Lisensi:{" "}
-              <a 
-                href={LICENSE_URL}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="hover:underline"
-              >
-                CC BY-NC-ND 4.0
-              </a>
-              . Penggunaan komersial memerlukan lisensi terpisah dari halaman
-              microstock fotografer.
-            </p>
+            <div className="bg-[#E5E5E5] border-2 border-[#111111] p-4 mt-6">
+              <p className="text-base font-bold text-[#111111]">
+                INFO LISENSI:{" "}
+                <a href={LICENSE_URL} target="_blank" rel="noopener noreferrer" className="text-[#332288] underline hover:bg-[#332288] hover:text-white px-1">
+                  CC BY-NC-ND 4.0
+                </a>
+                . Penggunaan komersial memerlukan lisensi terpisah dari platform microstock fotografer.
+              </p>
+            </div>
           </div>
         </div>
       </main>

@@ -2,12 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import {
-  DEFAULT_PAGE_SIZE,
-  MAX_PAGE_SIZE,
-  clampPage,
-  computeTotalPages,
-} from "@/lib/pagination";
+import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, clampPage, computeTotalPages } from "@/lib/pagination";
 
 interface PaginationControlsProps {
   page: number;
@@ -15,144 +10,61 @@ interface PaginationControlsProps {
   totalCount: number;
 }
 
-export default function PaginationControls({
-  page,
-  pageSize,
-  totalCount,
-}: PaginationControlsProps) {
+export default function PaginationControls({ page, pageSize, totalCount }: PaginationControlsProps) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-
   const totalPages = computeTotalPages(totalCount, pageSize);
 
   const [pageInput, setPageInput] = useState(String(page));
   const [pageSizeInput, setPageSizeInput] = useState(String(pageSize));
 
-  // Sinkronkan input lokal setiap kali navigasi server (Prev/Next/dsb.)
-  // mengubah prop dari luar, agar tidak menampilkan nilai usang.
-  useEffect(() => {
-    setPageInput(String(page));
-  }, [page]);
-
-  useEffect(() => {
-    setPageSizeInput(String(pageSize));
-  }, [pageSize]);
+  useEffect(() => { setPageInput(String(page)); }, [page]);
+  useEffect(() => { setPageSizeInput(String(pageSize)); }, [pageSize]);
 
   function navigateTo(rawPage: number, rawPageSize: number) {
     const params = new URLSearchParams(searchParams.toString());
-
-    const clampedPageSize = Math.min(
-      Math.max(Math.floor(rawPageSize) || DEFAULT_PAGE_SIZE, 1),
-      MAX_PAGE_SIZE
-    );
+    const clampedPageSize = Math.min(Math.max(Math.floor(rawPageSize) || DEFAULT_PAGE_SIZE, 1), MAX_PAGE_SIZE);
     const safeTotalPages = computeTotalPages(totalCount, clampedPageSize);
     const clampedPage = clampPage(Math.floor(rawPage) || 1, safeTotalPages);
 
-    if (clampedPage === 1) {
-      params.delete("page");
-    } else {
-      params.set("page", String(clampedPage));
-    }
-
-    if (clampedPageSize === DEFAULT_PAGE_SIZE) {
-      params.delete("pageSize");
-    } else {
-      params.set("pageSize", String(clampedPageSize));
-    }
+    if (clampedPage === 1) params.delete("page"); else params.set("page", String(clampedPage));
+    if (clampedPageSize === DEFAULT_PAGE_SIZE) params.delete("pageSize"); else params.set("pageSize", String(clampedPageSize));
 
     const queryString = params.toString();
     router.push(queryString ? `${pathname}?${queryString}` : pathname);
   }
 
-  function handlePrev() {
-    navigateTo(page - 1, pageSize);
-  }
+  function handlePageInputCommit() { const parsed = Number.parseInt(pageInput, 10); navigateTo(Number.isFinite(parsed) ? parsed : 1, pageSize); }
+  function handlePageSizeInputCommit() { const parsed = Number.parseInt(pageSizeInput, 10); navigateTo(1, Number.isFinite(parsed) ? parsed : DEFAULT_PAGE_SIZE); }
 
-  function handleNext() {
-    navigateTo(page + 1, pageSize);
-  }
-
-  function handlePageInputCommit() {
-    const parsed = Number.parseInt(pageInput, 10);
-    navigateTo(Number.isFinite(parsed) ? parsed : 1, pageSize);
-  }
-
-  function handlePageSizeInputCommit() {
-    const parsed = Number.parseInt(pageSizeInput, 10);
-    // Mengubah jumlah item per halaman selalu kembali ke halaman 1 agar
-    // tidak terdampar di halaman yang sudah tidak valid lagi.
-    navigateTo(1, Number.isFinite(parsed) ? parsed : DEFAULT_PAGE_SIZE);
-  }
+  const btnClass = "btn bg-white hover:bg-[#111111] hover:text-white text-[#111111] border-4 border-[#111111] rounded-none font-bold text-lg uppercase shadow-[4px_4px_0px_#111111] hover:translate-y-[2px] hover:shadow-[2px_2px_0px_#111111] transition-all disabled:opacity-50 disabled:hover:shadow-[4px_4px_0px_#111111] disabled:hover:translate-y-0 disabled:hover:bg-white disabled:hover:text-[#111111]";
+  const inputClass = "input text-center rounded-none border-4 border-[#111111] bg-white text-[#111111] font-bold text-lg shadow-[4px_4px_0px_#111111] focus:ring-4 focus:ring-[#44AA99] h-12";
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 py-6 border-t border-base-300 mt-6">
-      <p className="text-sm text-base-content/60">
-        Halaman {page} dari {totalPages} &middot; {totalCount} foto
+    <div className="flex flex-col xl:flex-row items-center justify-between gap-8 py-10 border-t-4 border-[#111111] mt-16 bg-[#E5E5E5] px-6">
+      <p className="font-bold text-xl uppercase tracking-widest text-[#111111] bg-white border-2 border-[#111111] px-4 py-2 shadow-[4px_4px_0px_#111111]">
+        HALAMAN {page} DARI {totalPages} <span className="mx-2">|</span> {totalCount} FOTO
       </p>
 
-      <div className="flex flex-wrap items-center gap-2">
-        <button
-          type="button"
-          onClick={handlePrev}
-          className="btn btn-sm btn-outline"
-          disabled={page <= 1}
-        >
-          « Sebelumnya
+      <div className="flex flex-wrap items-center justify-center gap-4">
+        <button type="button" onClick={() => navigateTo(page - 1, pageSize)} className={btnClass} disabled={page <= 1}>
+          « PREV
         </button>
 
-        <div className="join">
-          <input
-            type="number"
-            min={1}
-            max={totalPages}
-            value={pageInput}
-            onChange={(e) => setPageInput(e.target.value)}
-            onBlur={handlePageInputCommit}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                handlePageInputCommit();
-              }
-            }}
-            className="input input-bordered input-sm join-item w-16 text-center"
-            aria-label="Lompat ke halaman"
-          />
-          <span className="join-item btn btn-sm btn-disabled no-animation">
-            / {totalPages}
-          </span>
+        <div className="flex items-center gap-2">
+          <input type="number" min={1} max={totalPages} value={pageInput} onChange={(e) => setPageInput(e.target.value)} onBlur={handlePageInputCommit} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handlePageInputCommit(); } }} className={`${inputClass} w-20`} aria-label="Lompat ke halaman" />
+          <span className="font-bold text-2xl text-[#111111]">/ {totalPages}</span>
         </div>
 
-        <button
-          type="button"
-          onClick={handleNext}
-          className="btn btn-sm btn-outline"
-          disabled={page >= totalPages}
-        >
-          Berikutnya »
+        <button type="button" onClick={() => navigateTo(page + 1, pageSize)} className={btnClass} disabled={page >= totalPages}>
+          NEXT »
         </button>
       </div>
 
-      <label className="flex items-center gap-2 text-sm">
-        <span className="text-base-content/60 whitespace-nowrap">
-          Per halaman
-        </span>
-        <input
-          type="number"
-          min={1}
-          max={MAX_PAGE_SIZE}
-          value={pageSizeInput}
-          onChange={(e) => setPageSizeInput(e.target.value)}
-          onBlur={handlePageSizeInputCommit}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              handlePageSizeInputCommit();
-            }
-          }}
-          className="input input-bordered input-sm w-20"
-          aria-label="Jumlah item per halaman"
-        />
+      <label className="flex items-center gap-4 bg-white border-4 border-[#111111] p-2 shadow-[4px_4px_0px_#111111]">
+        <span className="font-bold text-sm uppercase tracking-widest text-[#111111] whitespace-nowrap ml-2">Per Halaman</span>
+        <input type="number" min={1} max={MAX_PAGE_SIZE} value={pageSizeInput} onChange={(e) => setPageSizeInput(e.target.value)} onBlur={handlePageSizeInputCommit} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handlePageSizeInputCommit(); } }} className={`${inputClass} w-24`} aria-label="Jumlah item per halaman" />
       </label>
     </div>
   );
