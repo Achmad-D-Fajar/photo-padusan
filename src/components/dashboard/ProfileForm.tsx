@@ -4,7 +4,6 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
-// Sesuaikan tipe profil dengan database Anda
 interface Profile {
   id: string;
   display_name: string;
@@ -25,31 +24,31 @@ export default function ProfileForm({ userId, initialProfile }: ProfileFormProps
   const router = useRouter();
   const supabase = createClient();
 
-  // State untuk form teks
+  // Menambahkan microstock_url ke state
   const [formData, setFormData] = useState({
     display_name: initialProfile.display_name || "",
     full_name: initialProfile.full_name || "",
     bio: initialProfile.bio || "",
     whatsapp: initialProfile.whatsapp || "",
     public_email: initialProfile.public_email || "",
+    microstock_url: initialProfile.microstock_url || "",
   });
 
-  // State khusus untuk file gambar
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(initialProfile.avatar_url);
   
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
-  // Cek apakah ada perubahan (baik teks maupun gambar)
+  // Menambahkan microstock_url ke pendeteksi perubahan
   const isTextChanged = 
     formData.display_name !== initialProfile.display_name ||
     formData.full_name !== (initialProfile.full_name || "") ||
     formData.bio !== (initialProfile.bio || "") ||
     formData.whatsapp !== (initialProfile.whatsapp || "") ||
-    formData.public_email !== (initialProfile.public_email || "");
+    formData.public_email !== (initialProfile.public_email || "") ||
+    formData.microstock_url !== (initialProfile.microstock_url || "");
   
-  // TOMBOL AKTIF JIKA: ada teks yang berubah ATAU ada file foto baru yang dipilih
   const canSubmit = (isTextChanged || avatarFile !== null) && !isSubmitting;
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -57,7 +56,6 @@ export default function ProfileForm({ userId, initialProfile }: ProfileFormProps
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
-  // PERBAIKAN 1: Buat URL lokal untuk preview gambar agar tidak blank
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -74,13 +72,12 @@ export default function ProfileForm({ userId, initialProfile }: ProfileFormProps
     try {
       let uploadedAvatarUrl = initialProfile.avatar_url;
 
-      // Jika ada file baru, unggah ke storage Supabase
       if (avatarFile) {
         const fileExt = avatarFile.name.split('.').pop();
         const filePath = `${userId}/avatar_${Date.now()}.${fileExt}`;
 
         const { error: uploadError } = await supabase.storage
-          .from("avatars") // Pastikan bucket 'avatars' sudah ada di Supabase Anda
+          .from("avatars")
           .upload(filePath, avatarFile, { upsert: true });
 
         if (uploadError) throw uploadError;
@@ -91,7 +88,9 @@ export default function ProfileForm({ userId, initialProfile }: ProfileFormProps
 
         uploadedAvatarUrl = publicUrl;
       }
-// Update profil di tabel 'profiles'
+
+      // Menyisipkan 'as any' untuk menghindari error type never,
+      // serta memasukkan microstock_url ke payload update.
       const { error: updateError } = await (supabase.from("profiles") as any)
         .update({
           display_name: formData.display_name,
@@ -99,6 +98,7 @@ export default function ProfileForm({ userId, initialProfile }: ProfileFormProps
           bio: formData.bio,
           whatsapp: formData.whatsapp,
           public_email: formData.public_email,
+          microstock_url: formData.microstock_url,
           avatar_url: uploadedAvatarUrl,
         })
         .eq("id", userId);
@@ -106,8 +106,8 @@ export default function ProfileForm({ userId, initialProfile }: ProfileFormProps
       if (updateError) throw updateError;
 
       setMessage({ type: "success", text: "Profil berhasil diperbarui!" });
-      setAvatarFile(null); // Reset file state setelah sukses agar tombol kembali disable
-      router.refresh(); // Refresh halaman agar navbar ikut terupdate
+      setAvatarFile(null); 
+      router.refresh(); 
     } catch (error: any) {
       setMessage({ type: "error", text: error.message || "Terjadi kesalahan saat menyimpan profil." });
     } finally {
@@ -215,10 +215,23 @@ export default function ProfileForm({ userId, initialProfile }: ProfileFormProps
             />
           </div>
         </div>
+
+        {/* INPUT URL DITAMBAHKAN KEMBALI DI SINI */}
+        <div>
+          <label className={labelClass}>URL Portofolio / Microstock</label>
+          <input 
+            type="url" 
+            name="microstock_url" 
+            value={formData.microstock_url} 
+            onChange={handleInputChange} 
+            placeholder="https://"
+            className={inputClass} 
+          />
+          <p className="text-sm font-bold mt-2">Tautan untuk mendukung atau membeli resolusi tinggi karya Anda.</p>
+        </div>
       </div>
 
       <div className="pt-8 border-t-4 border-[#111111]">
-        {/* PERBAIKAN 2: disabled menggunakan variabel canSubmit */}
         <button 
           type="submit" 
           disabled={!canSubmit} 
