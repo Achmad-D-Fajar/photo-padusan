@@ -1,6 +1,13 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import LogoutButton from "@/components/layouts/LogoutButton";
+import { Dela_Gothic_One } from "next/font/google";
+
+const delaGothic = Dela_Gothic_One({
+  weight: "400",
+  subsets: ["latin"],
+  display: "swap",
+});
 
 function getInitial(label: string): string {
   const trimmed = label.trim();
@@ -15,8 +22,8 @@ export default async function Navbar() {
     return (
       <div className="navbar bg-white border-b-4 border-[#111111] px-4 sm:px-8 shadow-[0px_4px_0px_#111111]">
         <div className="navbar-start">
-          <Link href="/" className="font-display text-xl sm:text-2xl uppercase tracking-wide text-[#111111] bg-[#88CCEE] border-4 border-[#111111] px-3 py-1 shadow-[4px_4px_0px_#111111]">
-            PADUPHOTO
+          <Link href="/" className={`${delaGothic.className} text-xl sm:text-2xl uppercase tracking-wide text-[#111111] bg-[#88CCEE] border-4 border-[#111111] px-3 py-1 shadow-[4px_4px_0px_#111111]`}>
+            PADUSTOCK
           </Link>
         </div>
         <div className="navbar-end">
@@ -67,12 +74,11 @@ export default async function Navbar() {
           </ul>
         </div>
 
-        {/* LOGO BARU: Memakai font-display Dela Gothic One + Box Logo Khas Brutalism */}
         <Link 
           href="/" 
-          className="font-display text-xl sm:text-2xl uppercase tracking-wide text-[#111111] bg-[#88CCEE] border-4 border-[#111111] px-4 py-1.5 shadow-[4px_4px_0px_#111111] hover:bg-[#111111] hover:text-[#E5E5E5] hover:shadow-none hover:translate-x-[4px] hover:translate-y-[4px] transition-all"
+          className={`${delaGothic.className} text-xl sm:text-2xl uppercase tracking-wide text-[#111111] bg-[#88CCEE] border-4 border-[#111111] px-4 py-1.5 shadow-[4px_4px_0px_#111111] hover:bg-[#111111] hover:text-[#E5E5E5] hover:shadow-none hover:translate-x-[4px] hover:translate-y-[4px] transition-all`}
         >
-          PADUPHOTO
+          PADUSTOCK
         </Link>
       </div>
 

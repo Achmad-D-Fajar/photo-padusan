@@ -52,11 +52,11 @@ export default function MyPhotoGrid({ photos, totalCount, initialOffset, isFilte
           <h2 className="font-display text-4xl font-bold uppercase tracking-tight text-[#111111]">
             {isFiltering ? "Tidak ada hasil" : "Belum ada foto"}
           </h2>
-          <p className="py-4 text-xl font-bold text-[#111111] max-w-lg leading-relaxed">
+          <p className="py-4 text-xl font-bold text-[#111111] max-w-lg leading-relaxed bg-white border-2 border-[#111111] px-6 mt-4 shadow-[4px_4px_0px_#111111]">
             {isFiltering ? "Ubah kata kunci pencarian." : "Mulai unggah karya Anda sekarang untuk dianalisis AI."}
           </p>
           {!isFiltering && (
-            <Link href="/dashboard/upload" className="btn bg-[#117733] hover:bg-[#0e5c27] text-white border-4 border-[#111111] rounded-none font-bold text-xl uppercase h-16 px-8 shadow-[6px_6px_0px_#111111] hover:translate-y-[2px] hover:shadow-[4px_4px_0px_#111111] transition-all">
+            <Link href="/dashboard/upload" className="btn bg-[#117733] hover:bg-[#0e5c27] text-white border-4 border-[#111111] rounded-none font-bold text-xl uppercase h-16 px-8 shadow-[6px_6px_0px_#111111] hover:translate-y-[2px] hover:shadow-[4px_4px_0px_#111111] transition-all mt-6">
               Unggah Foto
             </Link>
           )}
@@ -71,14 +71,17 @@ export default function MyPhotoGrid({ photos, totalCount, initialOffset, isFilte
         {items.map((photo) => {
           const combinedTags = [...new Set([...(photo.tags_id ?? []), ...(photo.tags_en ?? [])])].slice(0, 3);
           return (
-            <div key={photo.id} className="card bg-white border-4 border-[#111111] shadow-[8px_8px_0px_#111111] rounded-none flex flex-col group">
-              <figure className="aspect-square bg-[#E5E5E5] border-b-4 border-[#111111] relative overflow-hidden">
-                {photo.thumbnail_url ? (
-                  <img src={photo.thumbnail_url} alt={photo.caption_id || "Foto"} className="w-full h-full object-cover" />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center font-bold">No Image</div>
-                )}
-              </figure>
+            <div key={photo.id} className="card bg-white border-4 border-[#111111] shadow-[8px_8px_0px_#111111] rounded-none flex flex-col group hover:-translate-y-1 hover:shadow-[12px_12px_0px_#111111] transition-all">
+              {/* PERBAIKAN: Tautan dikembalikan ke halaman Edit Dasbor */}
+              <Link href={`/dashboard/edit/${photo.id}`} className="block w-full focus:outline-none focus:ring-4 focus:ring-[#44AA99]">
+                <figure className="aspect-square bg-[#E5E5E5] border-b-4 border-[#111111] relative overflow-hidden">
+                  {photo.thumbnail_url ? (
+                    <img src={photo.thumbnail_url} alt={photo.caption_id || "Foto"} className="w-full h-full object-cover transition-transform group-hover:scale-105" />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center font-bold text-[#111111]">No Image</div>
+                  )}
+                </figure>
+              </Link>
               <div className="card-body p-6 flex flex-col justify-between flex-1 gap-6">
                 <div>
                   <div className="flex justify-between items-start gap-2 mb-4">

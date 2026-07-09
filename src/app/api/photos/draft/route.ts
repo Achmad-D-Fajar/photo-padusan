@@ -36,7 +36,8 @@ export async function POST(request: NextRequest) {
       .single();
 
     const artistName = profile?.full_name || profile?.display_name || user.email || "Unknown";
-    const copyrightText = `© ${new Date().getUTCFullYear()} ${artistName} / PaduPhoto. All rights reserved.`;
+    // MENGUBAH TEKS HAK CIPTA EXIF KE PADUSTOCK
+    const copyrightText = `© ${new Date().getUTCFullYear()} ${artistName} / Padustock. All rights reserved.`;
 
     const formData = await request.formData();
     const file = formData.get("file");
@@ -48,15 +49,12 @@ export async function POST(request: NextRequest) {
     const captionEn = (formData.get("caption_en") as string | null)?.trim() || "Untitled photo";
     const captionId = (formData.get("caption_id") as string | null)?.trim() || "Foto tanpa judul";
     
-    // 1. Definisikan tag wajib Anda di sini
     const FORCED_TAGS_EN = ["padusan", "indonesia", "east java", "mojokerto"]; 
     const FORCED_TAGS_ID = ["padusan", "indonesia", "jawa timur", "mojokerto"];
 
-    // 2. Ambil tag dari form (manual ataupun dari AI)
     const rawTagsEn = parseTagsField(formData.get("tags_en"));
     const rawTagsId = parseTagsField(formData.get("tags_id"));
 
-    // 3. Gabungkan tag input dengan tag wajib, lalu gunakan Set untuk membuang duplikat
     const tagsEn = [...new Set([...rawTagsEn, ...FORCED_TAGS_EN])];
     const tagsId = [...new Set([...rawTagsId, ...FORCED_TAGS_ID])];
     const publishDirectly = formData.get("publish_directly") === "true";
@@ -100,7 +98,8 @@ export async function POST(request: NextRequest) {
         tags: [...new Set([...tagsEn, ...tagsId])].slice(0, 30),
         artist: artistName,
         copyright: copyrightText,
-        software: "PaduPhoto",
+        // MENGUBAH EXIF SOFTWARE KE PADUSTOCK
+        software: "Padustock",
       });
     } catch (metaError) {
       finalBuffer = watermarkedBuffer;

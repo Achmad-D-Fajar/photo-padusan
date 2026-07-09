@@ -6,7 +6,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const TEXT = "Desa Padusan - PaduPhoto";
+const TEXT = "Desa Padusan - PaduStock";
 const FONT_SIZE = 28;
 
 const estW = Math.ceil(TEXT.length * FONT_SIZE * 0.62) + FONT_SIZE;

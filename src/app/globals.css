@@ -2,7 +2,8 @@
 @plugin "daisyui";
 
 @theme {
-  --font-display: var(--font-dela-gothic), sans-serif;
+  --font-logo: var(--font-dela-gothic), sans-serif;
+  --font-display: var(--font-space-grotesk), sans-serif;
   --font-content: var(--font-atkinson), sans-serif;
 }
 

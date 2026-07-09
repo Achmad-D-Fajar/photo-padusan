@@ -9,14 +9,14 @@ interface PhotoPageProps {
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") ?? "https://paduphoto.vercel.app"; 
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") ?? "https://padustock.vercel.app"; 
 const LICENSE_URL = "https://creativecommons.org/licenses/by-nc-nd/4.0/";
 
 async function getPhoto(id: string) {
   const supabase = await createClient();
   const { data: photo, error } = await supabase
     .from("vw_public_photos")
-    .select("id, user_id, thumbnail_url, caption_en, caption_id, tags_en, tags_id, microstock_url, status, created_at, display_name, full_name")
+    .select("id, user_id, thumbnail_url, caption_en, caption_id, tags_en, tags_id, microstock_url, created_at, display_name, full_name")
     .eq("id", id)
     .single();
 
@@ -25,7 +25,8 @@ async function getPhoto(id: string) {
 }
 
 export async function generateMetadata({ params }: PhotoPageProps): Promise<Metadata> {
-  const { id } = await params;
+  const resolvedParams = await params;
+  const id = resolvedParams.id;
   if (!UUID_RE.test(id)) return { title: "Foto tidak ditemukan" };
 
   const photo = await getPhoto(id);
@@ -36,14 +37,14 @@ export async function generateMetadata({ params }: PhotoPageProps): Promise<Meta
 
   return {
     title: bilingualTitle,
-    description: `${photo.caption_id} — ${photo.caption_en}. Foto di Desa Padusanoleh ${photographerName} - PaduPhoto.`,
+    description: `${photo.caption_id} — ${photo.caption_en}. Foto di Desa Padusan oleh ${photographerName} - Padustock.`,
     openGraph: {
       type: "article",
       url: `${SITE_URL}/photo/${photo.id}`,
       title: bilingualTitle,
       description: `Foto oleh ${photographerName}`,
       images: photo.thumbnail_url ? [{ url: photo.thumbnail_url, alt: `${photo.caption_id} | ${photo.caption_en}` }] : [],
-      siteName: "PaduPhoto",
+      siteName: "Padustock",
     },
     twitter: {
       card: "summary_large_image",
@@ -56,11 +57,12 @@ export async function generateMetadata({ params }: PhotoPageProps): Promise<Meta
 }
 
 export default async function PhotoPage({ params }: PhotoPageProps) {
-  const { id } = await params;
+  const resolvedParams = await params;
+  const id = resolvedParams.id;
   if (!UUID_RE.test(id)) notFound();
 
   const photo = await getPhoto(id);
-  if (!photo) notFound();
+  if (!photo) notFound(); 
 
   const photographerName   = photo.full_name || `@${photo.display_name}`;
   const photographerPageUrl = `${SITE_URL}/photographer/${photo.display_name}`;
@@ -84,8 +86,8 @@ export default async function PhotoPage({ params }: PhotoPageProps) {
     copyrightYear: new Date(photo.created_at).getUTCFullYear(),
     license: LICENSE_URL,
     acquireLicensePage: photo.microstock_url ?? photoPageUrl,
-    creditText: `${photographerName} / PaduPhoto - Desa Padusan`,
-    publisher: { "@type": "Organization", name: "PaduPhoto", url: SITE_URL },
+    creditText: `${photographerName} / Padustock - Desa Padusan`,
+    publisher: { "@type": "Organization", name: "Padustock", url: SITE_URL },
     url: photoPageUrl,
   };
 
@@ -96,7 +98,7 @@ export default async function PhotoPage({ params }: PhotoPageProps) {
       <main className="container mx-auto px-4 py-12 max-w-4xl">
         <nav className="text-lg font-bold mb-8 flex flex-wrap gap-2 items-center">
           <Link href="/" className="text-[#332288] underline hover:bg-[#332288] hover:text-[#E5E5E5] px-2 py-1 transition-colors border-2 border-transparent focus:border-[#111111]">
-            PaduPhoto
+            Padustock
           </Link>
           <span>/</span>
           <Link href={`/photographer/${photo.display_name}`} className="text-[#332288] underline hover:bg-[#332288] hover:text-[#E5E5E5] px-2 py-1 transition-colors border-2 border-transparent focus:border-[#111111]">
@@ -164,25 +166,25 @@ export default async function PhotoPage({ params }: PhotoPageProps) {
                   href={photo.microstock_url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="btn bg-[#332288] hover:bg-[#20155c] text-[#E5E5E5] border-2 border-[#111111] rounded-none font-bold text-xl sm:text-2xl h-auto py-4 shadow-[6px_6px_0px_#111111] hover:translate-y-[2px] hover:shadow-[4px_4px_0px_#111111] transition-all w-full uppercase"
+                  className="btn bg-[#332288] hover:bg-[#20155c] text-[#E5E5E5] border-4 border-[#111111] rounded-none font-bold text-xl sm:text-2xl h-auto py-4 shadow-[6px_6px_0px_#111111] hover:translate-y-[2px] hover:shadow-[4px_4px_0px_#111111] transition-all w-full uppercase"
                 >
-                  Beli Resolusi Tinggi di Microstock
+                  Beli Resolusi Asli
                 </a>
               ) : (
                 <a
                   href={`/api/photos/download/${photo.id}`}
                   download
-                  className="btn bg-[#117733] hover:bg-[#0e5c27] text-[#E5E5E5] border-2 border-[#111111] rounded-none font-bold text-xl sm:text-2xl h-auto py-4 shadow-[6px_6px_0px_#111111] hover:translate-y-[2px] hover:shadow-[4px_4px_0px_#111111] transition-all w-full uppercase"
+                  className="btn bg-[#117733] hover:bg-[#0e5c27] text-[#E5E5E5] border-4 border-[#111111] rounded-none font-bold text-xl sm:text-2xl h-auto py-4 shadow-[6px_6px_0px_#111111] hover:translate-y-[2px] hover:shadow-[4px_4px_0px_#111111] transition-all w-full uppercase"
                 >
                   Download Gratis (Resolusi Asli)
                 </a>
               )}
             </div>
 
-            <div className="bg-[#E5E5E5] border-2 border-[#111111] p-4 mt-6">
-              <p className="text-base font-bold text-[#111111]">
+            <div className="bg-[#E5E5E5] border-4 border-[#111111] p-4 mt-8">
+              <p className="text-base font-bold text-[#111111] leading-relaxed">
                 INFO LISENSI:{" "}
-                <a href={LICENSE_URL} target="_blank" rel="noopener noreferrer" className="text-[#332288] underline hover:bg-[#332288] hover:text-white px-1">
+                <a href={LICENSE_URL} target="_blank" rel="noopener noreferrer" className="text-[#332288] underline hover:bg-[#332288] hover:text-[#E5E5E5] px-1 transition-colors">
                   CC BY-NC-ND 4.0
                 </a>
                 . Penggunaan komersial memerlukan lisensi terpisah dari platform microstock fotografer.

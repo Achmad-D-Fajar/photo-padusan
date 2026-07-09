@@ -124,11 +124,12 @@ export default async function HomePage({ searchParams }: HomePageProps) {
   return (
     <main className="container mx-auto px-4 py-12">
       <div className="mb-12 text-center flex flex-col items-center">
+        {/* PERBAIKAN: Mengembalikan font-bold agar Space Grotesk kembali tebal! */}
         <h1 className="font-display font-bold text-5xl md:text-7xl uppercase tracking-tighter text-[#111111] mb-6">
           Galeri Foto
         </h1>
         <p className="text-xl md:text-2xl font-bold text-[#111111] bg-white border-4 border-[#111111] shadow-[8px_8px_0px_#111111] p-6 max-w-3xl leading-relaxed">
-          Jelajahi karya fotografer komunitas kami. Klik tombol <span className="bg-[#117733] text-white px-2 py-1 uppercase tracking-tight">Unduh</span> atau <span className="bg-[#332288] text-white px-2 py-1 uppercase tracking-tight">Beli</span> untuk mendukung mereka secara langsung.
+          Jelajahi karya fotografer komunitas kami. Klik tombol <span className="bg-[#117733] text-white px-2 py-1 uppercase tracking-tight border-2 border-[#111111]">UNDUH</span> atau <span className="bg-[#332288] text-white px-2 py-1 uppercase tracking-tight border-2 border-[#111111]">BELI</span> untuk mendukung mereka secara langsung.
         </p>
       </div>
 

@@ -211,10 +211,10 @@ export default function UploadForm() {
           <div className="form-control bg-[#88CCEE] border-4 border-[#111111] p-4 sm:p-6 shadow-[4px_4px_0px_#111111]">
             <label className="label cursor-pointer justify-start gap-3 sm:gap-4 p-0 items-start">
               <input type="checkbox" checked={wantsMicrostockLink} onChange={(e) => setWantsMicrostockLink(e.target.checked)} className="checkbox rounded-none border-4 border-[#111111] w-8 h-8 focus:ring-4 focus:ring-[#111111] shrink-0 mt-0.5" disabled={isBusy} />
-              <span className="font-bold text-lg sm:text-xl text-[#111111] uppercase whitespace-normal break-words leading-tight">Saya akan menambahkan link Microstock</span>
+              <span className="font-bold text-lg sm:text-xl text-[#111111] uppercase whitespace-normal break-words leading-tight">Saya akan menambahkan link Eksternal</span>
             </label>
             <p className="text-base sm:text-lg font-bold text-[#111111] mt-4 leading-snug whitespace-normal break-words">
-              {wantsMicrostockLink ? "Status: DRAF (Tidak akan muncul di publik sampai link microstock dimasukkan di halaman Edit)." : "Status: PUBLIK (Bisa diunduh gratis oleh semua orang)."}
+              {wantsMicrostockLink ? "Status: DRAF (Tidak akan muncul di publik sampai link eksternal dimasukkan di halaman Edit)." : "Status: PUBLIK (Bisa diunduh gratis oleh semua orang)."}
             </p>
           </div>
 

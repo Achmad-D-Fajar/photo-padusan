@@ -67,7 +67,7 @@ export default function EditPhotoForm({ photo }: EditPhotoFormProps) {
   async function handlePublish() {
     const isCaptionValid = validateCommon();
     const errors: { captionId?: string; microstockUrl?: string } = {};
-    if (microstockUrl.trim().length === 0) errors.microstockUrl = "URL Microstock wajib diisi untuk publikasi.";
+    if (microstockUrl.trim().length === 0) errors.microstockUrl = "URL Eksternal (wajib diisi untuk publikasi).";
     else if (!URL_REGEX.test(microstockUrl.trim())) errors.microstockUrl = "Format URL tidak valid (http/https).";
 
     if (Object.keys(errors).length > 0 || !isCaptionValid) {
@@ -158,7 +158,7 @@ export default function EditPhotoForm({ photo }: EditPhotoFormProps) {
         </div>
 
         <div className="form-control border-t-4 border-[#111111] pt-8">
-          <label className="label" htmlFor="microstock_url"><span className={labelClass}>URL Microstock (Wajib untuk Publikasi)</span></label>
+          <label className="label" htmlFor="microstock_url"><span className={labelClass}>URL Eksternal (Wajib untuk Publikasi)</span></label>
           <input id="microstock_url" type="url" value={microstockUrl} onChange={(e) => { setMicrostockUrl(e.target.value); setActionStatus("idle"); }} className={`${inputClass} ${fieldErrors.microstockUrl ? "border-[#882255] bg-red-50" : ""}`} placeholder="https://..." disabled={isBusy} />
           {fieldErrors.microstockUrl && <label className="label mt-1"><span className="label-text-alt text-[#882255] font-bold text-base px-2 py-1 bg-white border-2 border-[#882255]">{fieldErrors.microstockUrl}</span></label>}
         </div>
