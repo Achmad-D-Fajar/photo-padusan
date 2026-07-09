@@ -13,7 +13,7 @@ const UUID_RE =
 
 const SITE_URL =
   process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") ??
-  "https://etalasepadusan.com";
+  "https://paduphoto.vercel.app"; // Fallback for local dev or missing env
 
 const LICENSE_URL = "https://creativecommons.org/licenses/by-nc-nd/4.0/";
 
@@ -44,7 +44,7 @@ export async function generateMetadata({
 
   return {
     title: bilingualTitle,
-    description: `${photo.caption_id} — ${photo.caption_en}. Foto oleh ${photographerName} di Etalase Padusan.`,
+    description: `${photo.caption_id} — ${photo.caption_en}. Foto di Desa Padusanoleh ${photographerName} - PaduPhoto.`,
     openGraph: {
       type: "article",
       url: `${SITE_URL}/photo/${photo.id}`,
@@ -53,7 +53,7 @@ export async function generateMetadata({
       images: photo.thumbnail_url
         ? [{ url: photo.thumbnail_url, alt: `${photo.caption_id} | ${photo.caption_en}` }]
         : [],
-      siteName: "Etalase Padusan",
+      siteName: "PaduPhoto",
     },
     twitter: {
       card: "summary_large_image",
@@ -109,10 +109,10 @@ export default async function PhotoPage({ params }: PhotoPageProps) {
     copyrightYear: new Date(photo.created_at).getUTCFullYear(),
     license: LICENSE_URL,
     acquireLicensePage: photo.microstock_url ?? photoPageUrl,
-    creditText: `${photographerName} / Etalase Padusan`,
+    creditText: `${photographerName} / PaduPhoto - Desa Padusan`,
     publisher: {
       "@type": "Organization",
-      name: "Etalase Padusan",
+      name: "PaduPhoto",
       url: SITE_URL,
     },
     url: photoPageUrl,
@@ -129,7 +129,7 @@ export default async function PhotoPage({ params }: PhotoPageProps) {
         <nav className="text-sm breadcrumbs mb-6">
           <ul>
             <li>
-              <Link href="/">Etalase</Link>
+              <Link href="/">PaduPhoto</Link>
             </li>
             <li>
               <Link href={`/photographer/${photo.display_name}`}>

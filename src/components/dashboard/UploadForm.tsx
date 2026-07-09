@@ -4,52 +4,9 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { GeminiBilingualResult } from "@/lib/server/gemini-analysis";
 
-// ── Canvas compression ────────────────────────────────────────────────────────────
-const MAX_WIDTH_PX        = 800;
-const COMPRESSION_QUALITY = 0.85;
-const MAX_SOURCE_SIZE     = 20 * 1024 * 1024;
-const MAX_CONTEXT_LEN     = 300;
+const MAX_SOURCE_SIZE = 20 * 1024 * 1024; // 20MB
+const MAX_CONTEXT_LEN = 300;
 
-function canvasToBlob(canvas: HTMLCanvasElement): Promise<Blob> {
-  return new Promise((resolve, reject) => {
-    canvas.toBlob(
-      (wb) =>
-        wb
-          ? resolve(wb)
-          : canvas.toBlob(
-              (jb) =>
-                jb
-                  ? resolve(jb)
-                  : reject(new Error("Browser tidak dapat memproses gambar ini.")),
-              "image/jpeg",
-              COMPRESSION_QUALITY
-            ),
-      "image/webp",
-      COMPRESSION_QUALITY
-    );
-  });
-}
-
-async function compressImage(file: File): Promise<Blob> {
-  const bmp = await createImageBitmap(file, { imageOrientation: "from-image" });
-  const scale = Math.min(1, MAX_WIDTH_PX / bmp.width);
-  const canvas = document.createElement("canvas");
-  canvas.width = Math.round(bmp.width * scale);
-  canvas.height = Math.round(bmp.height * scale);
-  const ctx = canvas.getContext("2d");
-  if (!ctx) throw new Error("Canvas tidak tersedia di browser ini.");
-  ctx.drawImage(bmp, 0, 0, canvas.width, canvas.height);
-  bmp.close();
-  return canvasToBlob(canvas);
-}
-
-function extensionFromMime(type: string): string {
-  if (type === "image/webp") return "webp";
-  if (type === "image/png") return "png";
-  return "jpg";
-}
-
-// ── Helpers ───────────────────────────────────────────────────────────────────────
 interface EditableAnalysis {
   captionEn: string;
   captionId: string;
@@ -57,10 +14,6 @@ interface EditableAnalysis {
   tagsIdInput: string;
 }
 
-// "compose"  — initial state, file not yet ready or just selected
-// "analyzing"— AI request in-flight
-// "review"   — AI returned; user is reviewing in the popup
-// "saving"   — draft/publish request in-flight
 type Phase = "compose" | "analyzing" | "review" | "saving";
 
 function tagsToInput(tags: string[]): string {
@@ -74,40 +27,26 @@ function inputToTags(input: string): string[] {
     .filter((t) => t.length > 0);
 }
 
-// ── Component ─────────────────────────────────────────────────────────────────────
 export default function UploadForm() {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // ── Mode toggles (Features 1 & 2) ──────────────────────────────────────────
-  // Feature 1: false = manual caption/tags; true = AI-generated
   const [useAI, setUseAI] = useState(false);
-
-  // Feature 2: true = save as draft (photographer will add microstock link later)
-  //            false = publish immediately, microstock_url stays null
   const [wantsMicrostockLink, setWantsMicrostockLink] = useState(true);
 
-  // ── Compression state ─────────────────────────────────────────────────────────
-  const [compressedBlob, setCompressedBlob] = useState<Blob | null>(null);
+  // Menghapus state kompresi canvas dan hanya menyimpan file aslinya
+  const [originalFile, setOriginalFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [originalSize, setOriginalSize] = useState<number | null>(null);
-  const [isCompressing, setIsCompressing] = useState(false);
-  const [compressError, setCompressError] = useState("");
 
-  // ── Manual mode inputs (Feature 1) ───────────────────────────────────────────
   const [manualCaption, setManualCaption] = useState("");
   const [manualTagsInput, setManualTagsInput] = useState("");
-
-  // ── AI mode context textarea (Feature 1) ─────────────────────────────────────
   const [aiContext, setAiContext] = useState("");
 
-  // ── Shared phase + error state ────────────────────────────────────────────────
   const [phase, setPhase] = useState<Phase>("compose");
   const [errorMessage, setErrorMessage] = useState("");
 
-  // ── AI review popup state ─────────────────────────────────────────────────────
-  const [editableAnalysis, setEditableAnalysis] =
-    useState<EditableAnalysis | null>(null);
+  const [editableAnalysis, setEditableAnalysis] = useState<EditableAnalysis | null>(null);
   const [copiedField, setCopiedField] = useState<string | null>(null);
 
   useEffect(() => {
@@ -121,45 +60,29 @@ export default function UploadForm() {
     if (previewUrl) URL.revokeObjectURL(previewUrl);
 
     if (!file) {
-      setCompressedBlob(null);
+      setOriginalFile(null);
       setPreviewUrl(null);
       setOriginalSize(null);
       return;
     }
 
     if (!file.type.startsWith("image/")) {
-      setCompressError("File harus berupa gambar.");
+      setErrorMessage("File harus berupa gambar.");
       return;
     }
     if (file.size > MAX_SOURCE_SIZE) {
-      setCompressError("Ukuran file maksimal 20MB.");
+      setErrorMessage("Ukuran file maksimal 20MB.");
       return;
     }
 
-    setIsCompressing(true);
-    setCompressError("");
+    // Bypass canvas pipeline sepenuhnya. Langsung render file asli.
+    setOriginalFile(file);
+    setPreviewUrl(URL.createObjectURL(file));
     setOriginalSize(file.size);
     setPhase("compose");
     setErrorMessage("");
-
-    try {
-      const blob = await compressImage(file);
-      setCompressedBlob(blob);
-      setPreviewUrl(URL.createObjectURL(blob));
-    } catch (err) {
-      setCompressError(
-        err instanceof Error ? err.message : "Gagal mengompres gambar."
-      );
-      setCompressedBlob(null);
-      setPreviewUrl(null);
-    } finally {
-      setIsCompressing(false);
-    }
   }
 
-  // Builds the base FormData payload shared by both AI and manual paths.
-  // `publish_directly` signals the draft route to insert with status='published'
-  // and microstock_url=null instead of the default status='draft'.
   function buildBaseFormData(
     captionEn: string,
     captionId: string,
@@ -167,16 +90,11 @@ export default function UploadForm() {
     tagsId: string[]
   ): FormData {
     const fd = new FormData();
-    fd.append(
-      "file",
-      compressedBlob!,
-      `image.${extensionFromMime(compressedBlob!.type)}`
-    );
+    fd.append("file", originalFile!, originalFile!.name); 
     fd.append("caption_en", captionEn.trim());
     fd.append("caption_id", captionId.trim());
     fd.append("tags_en", JSON.stringify(tagsEn));
     fd.append("tags_id", JSON.stringify(tagsId));
-    // Feature 2: pass the publish intent so the API route sets the correct status
     fd.append("publish_directly", (!wantsMicrostockLink).toString());
     return fd;
   }
@@ -189,10 +107,8 @@ export default function UploadForm() {
     }
   }
 
-  // ── Feature 1 (Manual path): submit directly without AI ──────────────────────
-  // ── Feature 1 & 2 (Manual path with auto-translate): submit directly ────────
   async function handleManualSubmit() {
-    if (!compressedBlob) return;
+    if (!originalFile) return;
     if (!manualCaption.trim()) {
       setErrorMessage("Caption tidak boleh kosong.");
       return;
@@ -204,7 +120,6 @@ export default function UploadForm() {
     try {
       const parsedTagsId = inputToTags(manualTagsInput);
 
-      // 1. Fetch translation
       const transRes = await fetch("/api/photos/translate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -220,7 +135,6 @@ export default function UploadForm() {
         throw new Error(transData.error || "Gagal menerjemahkan teks. Coba lagi.");
       }
 
-      // 2. Build payload with translated EN data and original ID data
       const fd = buildBaseFormData(
         transData.data.caption_en,
         manualCaption,
@@ -228,7 +142,6 @@ export default function UploadForm() {
         parsedTagsId
       );
 
-      // 3. Post to draft route
       await postToDraftRoute(fd);
       router.push("/dashboard");
       router.refresh();
@@ -240,20 +153,16 @@ export default function UploadForm() {
     }
   }
 
-  // ── Feature 1 (AI path) Phase 1: analyze ─────────────────────────────────────
   async function runAnalysis() {
-    if (!compressedBlob) return;
+    if (!originalFile) return;
 
     setPhase("analyzing");
     setErrorMessage("");
 
     try {
       const fd = new FormData();
-      fd.append(
-        "file",
-        compressedBlob,
-        `image.${extensionFromMime(compressedBlob.type)}`
-      );
+      // Mengirimkan file asli ke AI agar terbaca sempurna
+      fd.append("file", originalFile, originalFile.name);
       if (aiContext.trim()) fd.append("description", aiContext.trim());
 
       const res = await fetch("/api/photos/analyze", {
@@ -280,9 +189,8 @@ export default function UploadForm() {
     }
   }
 
-  // ── Feature 1 (AI path) Phase 2: save from the review popup ──────────────────
   async function handleSaveDraft() {
-    if (!compressedBlob || !editableAnalysis) return;
+    if (!originalFile || !editableAnalysis) return;
 
     setPhase("saving");
     setErrorMessage("");
@@ -314,23 +222,19 @@ export default function UploadForm() {
         1500
       );
     } catch {
-      /* clipboard unavailable in some browser contexts */
+      // clipboard unavailable
     }
   }
 
   const isBusy = phase === "analyzing" || phase === "saving";
-  // Label for the primary save action — changes based on Feature 2 state
   const saveActionLabel = wantsMicrostockLink
     ? "Simpan sebagai Draf"
     : "Publikasikan Sekarang";
 
   return (
     <>
-      {/* ── Main compose card ──────────────────────────────────────────────── */}
-      <div className="card bg-base-100 border border-base-300 shadow-md">
+      <div className="card bg-base-100 border border-base-300 shadow-md rounded-none">
         <div className="card-body gap-4">
-
-          {/* File input */}
           <div className="form-control">
             <label className="label" htmlFor="file-input">
               <span className="label-text">Pilih gambar (maks. 20MB)</span>
@@ -341,27 +245,14 @@ export default function UploadForm() {
               type="file"
               accept="image/*"
               onChange={handleFileChange}
-              className="file-input file-input-bordered w-full"
+              className="file-input file-input-bordered w-full rounded-none"
               disabled={isBusy}
             />
           </div>
 
-          {isCompressing && (
-            <div className="flex items-center gap-2 text-sm text-base-content/70">
-              <span className="loading loading-spinner loading-sm" />
-              Mengompres gambar...
-            </div>
-          )}
-
-          {compressError && (
-            <div role="alert" className="alert alert-error">
-              <span>{compressError}</span>
-            </div>
-          )}
-
-          {previewUrl && compressedBlob && (
+          {previewUrl && originalFile && (
             <div>
-              <div className="rounded-box overflow-hidden border border-base-300 aspect-square w-full max-w-xs mx-auto bg-base-200">
+              <div className="overflow-hidden border border-base-300 aspect-square w-full max-w-xs mx-auto bg-base-200">
                 <img
                   src={previewUrl}
                   alt="Pratinjau"
@@ -370,8 +261,7 @@ export default function UploadForm() {
               </div>
               {originalSize !== null && (
                 <p className="text-xs text-center text-base-content/50 mt-2">
-                  {(originalSize / 1024).toFixed(0)} KB →{" "}
-                  {(compressedBlob.size / 1024).toFixed(0)} KB (terkompresi)
+                  {(originalSize / 1024 / 1024).toFixed(2)} MB (Resolusi Asli)
                 </p>
               )}
             </div>
@@ -379,7 +269,6 @@ export default function UploadForm() {
 
           <div className="divider my-0" />
 
-          {/* ── Feature 1: AI mode toggle ────────────────────────────────── */}
           <label className="label cursor-pointer justify-start gap-3">
             <input
               type="checkbox"
@@ -388,7 +277,7 @@ export default function UploadForm() {
                 setUseAI(e.target.checked);
                 setErrorMessage("");
               }}
-              className="checkbox"
+              className="checkbox rounded-none"
               disabled={isBusy}
             />
             <span className="label-text font-medium">
@@ -396,7 +285,6 @@ export default function UploadForm() {
             </span>
           </label>
 
-          {/* ── Feature 1: Manual inputs (default) ──────────────────────── */}
           {!useAI && (
             <>
               <div className="form-control">
@@ -407,7 +295,7 @@ export default function UploadForm() {
                   id="manual-caption"
                   value={manualCaption}
                   onChange={(e) => setManualCaption(e.target.value)}
-                  className="textarea textarea-bordered w-full"
+                  className="textarea textarea-bordered w-full rounded-none"
                   rows={3}
                   placeholder="Deskripsikan foto ini..."
                   disabled={isBusy}
@@ -423,7 +311,7 @@ export default function UploadForm() {
                   type="text"
                   value={manualTagsInput}
                   onChange={(e) => setManualTagsInput(e.target.value)}
-                  className="input input-bordered w-full"
+                  className="input input-bordered w-full rounded-none"
                   placeholder="sawah, pagi, Padusan, Mojokerto"
                   disabled={isBusy}
                 />
@@ -436,7 +324,6 @@ export default function UploadForm() {
             </>
           )}
 
-          {/* ── Feature 1: AI context textarea (shown only in AI mode) ──── */}
           {useAI && (
             <div className="form-control">
               <label className="label" htmlFor="ai-context">
@@ -450,7 +337,7 @@ export default function UploadForm() {
                 onChange={(e) =>
                   setAiContext(e.target.value.slice(0, MAX_CONTEXT_LEN))
                 }
-                className="textarea textarea-bordered w-full"
+                className="textarea textarea-bordered w-full rounded-none"
                 rows={3}
                 placeholder="Contoh: foto sawah pagi hari dengan kabut tipis di lereng gunung"
                 disabled={isBusy}
@@ -469,13 +356,12 @@ export default function UploadForm() {
 
           <div className="divider my-0" />
 
-          {/* ── Feature 2: Microstock link toggle ───────────────────────── */}
           <label className="label cursor-pointer justify-start gap-3">
             <input
               type="checkbox"
               checked={wantsMicrostockLink}
               onChange={(e) => setWantsMicrostockLink(e.target.checked)}
-              className="checkbox"
+              className="checkbox rounded-none"
               disabled={isBusy}
             />
             <span className="label-text font-medium">
@@ -483,34 +369,32 @@ export default function UploadForm() {
             </span>
           </label>
 
-          {/* Contextual hint for each microstock mode */}
           {wantsMicrostockLink ? (
             <p className="text-xs text-base-content/60 -mt-2">
               Foto akan disimpan sebagai{" "}
-              <span className="badge badge-warning badge-sm">Draf</span> — tambahkan
+              <span className="badge badge-warning badge-sm rounded-none">Draf</span> — tambahkan
               link microstock di halaman Edit sebelum dipublikasikan.
             </p>
           ) : (
             <p className="text-xs text-base-content/60 -mt-2">
               Foto akan langsung{" "}
-              <span className="badge badge-success badge-sm">Dipublikasikan</span>{" "}
+              <span className="badge badge-success badge-sm rounded-none">Dipublikasikan</span>{" "}
               di platform dan bisa diunduh gratis oleh pengunjung.
             </p>
           )}
 
           {errorMessage && phase === "compose" && (
-            <div role="alert" className="alert alert-error">
+            <div role="alert" className="alert alert-error rounded-none">
               <span>{errorMessage}</span>
             </div>
           )}
 
-          {/* ── Primary action button — adapts to mode ───────────────────── */}
           {useAI ? (
             <button
               type="button"
               onClick={runAnalysis}
-              className="btn btn-primary"
-              disabled={!compressedBlob || isCompressing || isBusy}
+              className="btn bg-[#117733] hover:bg-[#0e5c27] text-[#E5E5E5] rounded-none"
+              disabled={!originalFile || isBusy}
             >
               {phase === "analyzing" ? (
                 <>
@@ -526,7 +410,7 @@ export default function UploadForm() {
               type="button"
               onClick={handleManualSubmit}
               className="btn bg-[#117733] hover:bg-[#0e5c27] text-[#E5E5E5] rounded-none"
-              disabled={!compressedBlob || isCompressing || isBusy}
+              disabled={!originalFile || isBusy}
             >
               {phase === "saving" ? (
                 <>
@@ -541,19 +425,17 @@ export default function UploadForm() {
         </div>
       </div>
 
-      {/* ── AI Review / Edit Modal ──────────────────────────────────────────── */}
       {(phase === "review" || (phase === "saving" && editableAnalysis)) &&
         editableAnalysis && (
           <dialog className="modal modal-open">
-            <div className="modal-box max-w-2xl w-full">
+            <div className="modal-box max-w-2xl w-full rounded-none">
               <h3 className="font-bold text-lg mb-1">Tinjau &amp; Edit Konten AI</h3>
               <p className="text-sm text-base-content/70 mb-5">
                 Edit caption dan tag sebelum disimpan. Klik{" "}
-                <kbd className="kbd kbd-xs">Salin</kbd> untuk menyalin ke clipboard.
+                <kbd className="kbd kbd-xs rounded-none border-[#111111]">Salin</kbd> untuk menyalin ke clipboard.
               </p>
 
               <div className="flex flex-col gap-5">
-                {/* Caption EN */}
                 <div className="form-control">
                   <label className="label" htmlFor="edit-caption-en">
                     <span className="label-text font-semibold">
@@ -564,7 +446,7 @@ export default function UploadForm() {
                       onClick={() =>
                         handleCopy(editableAnalysis.captionEn, "caption_en")
                       }
-                      className="btn btn-xs btn-ghost"
+                      className="btn btn-xs btn-ghost rounded-none"
                       disabled={phase === "saving"}
                     >
                       {copiedField === "caption_en" ? "✓ Tersalin!" : "Salin"}
@@ -578,13 +460,12 @@ export default function UploadForm() {
                         prev ? { ...prev, captionEn: e.target.value } : prev
                       )
                     }
-                    className="textarea textarea-bordered w-full"
+                    className="textarea textarea-bordered w-full rounded-none"
                     rows={2}
                     disabled={phase === "saving"}
                   />
                 </div>
 
-                {/* Caption ID */}
                 <div className="form-control">
                   <label className="label" htmlFor="edit-caption-id">
                     <span className="label-text font-semibold">
@@ -595,7 +476,7 @@ export default function UploadForm() {
                       onClick={() =>
                         handleCopy(editableAnalysis.captionId, "caption_id")
                       }
-                      className="btn btn-xs btn-ghost"
+                      className="btn btn-xs btn-ghost rounded-none"
                       disabled={phase === "saving"}
                     >
                       {copiedField === "caption_id" ? "✓ Tersalin!" : "Salin"}
@@ -609,13 +490,12 @@ export default function UploadForm() {
                         prev ? { ...prev, captionId: e.target.value } : prev
                       )
                     }
-                    className="textarea textarea-bordered w-full"
+                    className="textarea textarea-bordered w-full rounded-none"
                     rows={2}
                     disabled={phase === "saving"}
                   />
                 </div>
 
-                {/* Tags EN */}
                 <div className="form-control">
                   <label className="label" htmlFor="edit-tags-en">
                     <span className="label-text font-semibold">
@@ -629,7 +509,7 @@ export default function UploadForm() {
                       onClick={() =>
                         handleCopy(editableAnalysis.tagsEnInput, "tags_en")
                       }
-                      className="btn btn-xs btn-ghost"
+                      className="btn btn-xs btn-ghost rounded-none"
                       disabled={phase === "saving"}
                     >
                       {copiedField === "tags_en" ? "✓ Tersalin!" : "Salin"}
@@ -643,7 +523,7 @@ export default function UploadForm() {
                         prev ? { ...prev, tagsEnInput: e.target.value } : prev
                       )
                     }
-                    className="textarea textarea-bordered w-full font-mono text-sm"
+                    className="textarea textarea-bordered w-full font-mono text-sm rounded-none"
                     rows={3}
                     disabled={phase === "saving"}
                   />
@@ -654,7 +534,6 @@ export default function UploadForm() {
                   </label>
                 </div>
 
-                {/* Tags ID */}
                 <div className="form-control">
                   <label className="label" htmlFor="edit-tags-id">
                     <span className="label-text font-semibold">
@@ -668,7 +547,7 @@ export default function UploadForm() {
                       onClick={() =>
                         handleCopy(editableAnalysis.tagsIdInput, "tags_id")
                       }
-                      className="btn btn-xs btn-ghost"
+                      className="btn btn-xs btn-ghost rounded-none"
                       disabled={phase === "saving"}
                     >
                       {copiedField === "tags_id" ? "✓ Tersalin!" : "Salin"}
@@ -682,7 +561,7 @@ export default function UploadForm() {
                         prev ? { ...prev, tagsIdInput: e.target.value } : prev
                       )
                     }
-                    className="textarea textarea-bordered w-full font-mono text-sm"
+                    className="textarea textarea-bordered w-full font-mono text-sm rounded-none"
                     rows={3}
                     disabled={phase === "saving"}
                   />
@@ -695,14 +574,13 @@ export default function UploadForm() {
               </div>
 
               {errorMessage && (
-                <div role="alert" className="alert alert-error mt-4">
+                <div role="alert" className="alert alert-error mt-4 rounded-none">
                   <span>{errorMessage}</span>
                 </div>
               )}
 
-              {/* Feature 2: hint in the popup so the user knows what will happen */}
               {!wantsMicrostockLink && (
-                <div role="alert" className="alert alert-info mt-4">
+                <div role="alert" className="alert alert-info mt-4 rounded-none">
                   <span className="text-sm">
                     Foto akan langsung <strong>dipublikasikan</strong> sebagai konten
                     gratis. Anda dapat menambahkan link microstock di halaman Edit
@@ -718,7 +596,7 @@ export default function UploadForm() {
                     setPhase("compose");
                     setErrorMessage("");
                   }}
-                  className="btn btn-ghost"
+                  className="btn btn-ghost rounded-none"
                   disabled={phase === "saving"}
                 >
                   ← Ubah Gambar
@@ -726,7 +604,7 @@ export default function UploadForm() {
                 <button
                   type="button"
                   onClick={runAnalysis}
-                  className="btn btn-outline"
+                  className="btn btn-outline rounded-none border-[#111111] text-[#111111]"
                   disabled={phase === "saving"}
                 >
                   Analisis Ulang
@@ -734,7 +612,7 @@ export default function UploadForm() {
                 <button
                   type="button"
                   onClick={handleSaveDraft}
-                  className="btn btn-primary"
+                  className="btn bg-[#117733] hover:bg-[#0e5c27] text-[#E5E5E5] rounded-none"
                   disabled={phase === "saving"}
                 >
                   {phase === "saving" ? (

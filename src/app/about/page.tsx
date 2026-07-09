@@ -5,7 +5,7 @@ export default function AboutPage() {
 
       <div className="prose prose-base max-w-none space-y-4 text-base-content/80">
         <p>
-          Etalase Digital Padusan adalah platform agregator foto yang
+          PaduPhoto adalah platform agregator foto yang
           menghubungkan fotografer komunitas Desa Padusan dengan dunia luar.
           Setiap karya yang dipublikasikan di sini dikurasi langsung oleh
           fotografernya, lengkap dengan caption dan tag yang dibantu

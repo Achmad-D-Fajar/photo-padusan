@@ -138,7 +138,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
   return (
     <main className="container mx-auto px-4 py-10">
       <div className="mb-8 text-center">
-        <h1 className="text-4xl font-bold">Etalase Foto</h1>
+        <h1 className="text-4xl font-bold">Galeri Foto</h1>
         <p className="text-base-content/70 mt-2 max-w-xl mx-auto">
           Jelajahi karya fotografer komunitas kami. Klik &quot;Beli / Unduh
           Resolusi Tinggi&quot; untuk mendukung mereka langsung di

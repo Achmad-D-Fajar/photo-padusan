@@ -16,7 +16,7 @@ export default async function Navbar() {
       <div className="navbar bg-base-100 border-b border-base-300 px-4 sm:px-8">
         <div className="navbar-start">
           <Link href="/" className="btn btn-ghost text-xl">
-            Etalase Padusan
+            PaduPhoto
           </Link>
         </div>
         <div className="navbar-end">
@@ -97,7 +97,7 @@ export default async function Navbar() {
         </div>
 
         <Link href="/" className="btn btn-ghost text-xl">
-          Etalase Padusan
+          PaduPhoto
         </Link>
       </div>
 

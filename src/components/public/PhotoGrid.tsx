@@ -133,7 +133,7 @@ export default function PhotoGrid({
                 {/* Feature 4: visible indicator for freely downloadable photos */}
                 {photo.microstock_url === null && (
                   <span className="badge badge-success absolute bottom-2 left-2 z-10">
-                    Unduh Langsung
+                    Unduh Gratis
                   </span>
                 )}
               </figure>

@@ -52,7 +52,7 @@ function injectExif(jpegBuffer: Buffer, params: EmbedMetadataParams): Buffer {
         params.copyright.slice(0, 255)
       ),
       [piexif.ImageIFD.Software]: utf8AsBinaryString(
-        (params.software ?? "Etalase Padusan").slice(0, 255)
+        (params.software ?? "PaduPhoto").slice(0, 255)
       ),
       [piexif.ImageIFD.DateTime]: params.dateTime ?? nowExifDateTime(),
     },

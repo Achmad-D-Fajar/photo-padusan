@@ -11,11 +11,9 @@ export interface GeminiBilingualResult {
 // guarantees they survive even when Gemini hallucinates or forgets them.
 const REQUIRED_TAGS_EN = [
   "Padusan", "Mojokerto", "East Java", "Indonesia",
-  "nature photography", "village", "rural",
 ];
 const REQUIRED_TAGS_ID = [
   "Padusan", "Mojokerto", "Jawa Timur", "Indonesia",
-  "fotografi alam", "desa", "wisata",
 ];
 
 export function buildBilingualPrompt(description: string | null): string {
@@ -45,8 +43,8 @@ STRICT RULES — violating any rule makes your response unusable:
 Fill remaining 9 slots with image-specific keywords: subject, colors, mood, season, \
 lighting condition, composition style.
 3. tags_id: exactly 15 Bahasa Indonesia strings. MUST contain "Padusan", "Mojokerto", \
-"Jawa Timur", "Indonesia", "fotografi alam", "desa", "wisata". \
-Fill remaining 8 slots with image-specific Indonesian keywords: subjek, warna, suasana, \
+"Jawa Timur", "Indonesia". \
+Fill remaining 12 slots with image-specific Indonesian keywords: subjek, warna, suasana, \
 musim, kondisi cahaya, gaya komposisi.
 4. All tags lowercase EXCEPT proper nouns: Padusan, Mojokerto, East Java, Jawa Timur, Indonesia.
 5. caption_en must be English only. caption_id must be Bahasa Indonesia only.${context}`;
@@ -71,8 +69,8 @@ export function parseGeminiBilingualResponse(rawText: string): GeminiBilingualRe
   } catch {
     // Gemini hallucinated non-JSON — return bilingual safe defaults
     return {
-      caption_en: "A scenic photograph from Padusan Village, Mojokerto.",
-      caption_id: "Foto pemandangan dari Desa Padusan, Mojokerto.",
+      caption_en: "A photograph from Padusan Village, Mojokerto.",
+      caption_id: "Foto dari Desa Padusan, Mojokerto.",
       tags_en: [...REQUIRED_TAGS_EN],
       tags_id: [...REQUIRED_TAGS_ID],
     };
@@ -93,11 +91,11 @@ export function parseGeminiBilingualResponse(rawText: string): GeminiBilingualRe
     caption_en:
       typeof parsed.caption_en === "string" && parsed.caption_en.trim()
         ? parsed.caption_en.trim()
-        : "A scenic photograph from Padusan Village, Mojokerto.",
+        : "A photograph from Padusan Village, Mojokerto.",
     caption_id:
       typeof parsed.caption_id === "string" && parsed.caption_id.trim()
         ? parsed.caption_id.trim()
-        : "Foto pemandangan dari Desa Padusan, Mojokerto.",
+        : "Foto dari Desa Padusan, Mojokerto.",
     tags_en: extractTags(parsed.tags_en, REQUIRED_TAGS_EN),
     tags_id: extractTags(parsed.tags_id, REQUIRED_TAGS_ID),
   };

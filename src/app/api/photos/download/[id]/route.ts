@@ -18,10 +18,6 @@ export async function GET(
 
   const supabase = await createClient();
 
-  // Query from the `photos` table directly (not the view) because
-  // `vw_public_photos` does not expose `image_url`.
-  // The RLS policy "Published photos are viewable by everyone, drafts by owner"
-  // ensures anonymous callers can only ever resolve published rows.
   const { data: photo, error } = await supabase
     .from("photos")
     .select("id, image_url, thumbnail_url, caption_en, caption_id, microstock_url")
@@ -32,7 +28,6 @@ export async function GET(
     return NextResponse.json({ error: "Foto tidak ditemukan." }, { status: 404 });
   }
 
-  // Prevent this free-download route from being used for microstock photos.
   if (photo.microstock_url !== null) {
     return NextResponse.json(
       { error: "Foto ini tersedia di microstock, bukan untuk unduhan langsung." },
@@ -40,9 +35,6 @@ export async function GET(
     );
   }
 
-  // Prefer the original high-res upload (`image_url`).
-  // Fall back to the processed thumbnail if image_url was never stored
-  // (photos uploaded through the new compressed-only pipeline).
   const downloadUrl = photo.image_url ?? photo.thumbnail_url;
 
   if (!downloadUrl) {
@@ -52,10 +44,6 @@ export async function GET(
     );
   }
 
-  // Proxy the file through our server so the browser receives it with
-  // Content-Disposition: attachment.  The download URL is cross-origin
-  // (Supabase CDN), so the `download` attribute on <a> alone is not
-  // enough — the header must be injected server-side.
   let imageResponse: Response;
   try {
     imageResponse = await fetch(downloadUrl);
@@ -71,7 +59,7 @@ export async function GET(
   const contentType =
     imageResponse.headers.get("content-type") ?? "image/jpeg";
 
-  const captionForFilename = (photo.caption_id ?? photo.caption_en ?? "foto-padusan")
+  const captionForFilename = (photo.caption_id ?? photo.caption_en ?? "foto-paduphoto")
     .toLowerCase()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
@@ -79,7 +67,7 @@ export async function GET(
     .replace(/^-|-$/g, "")
     .slice(0, 60);
 
-  const filename = `${captionForFilename}-etalase-padusan.jpg`;
+  const filename = `${captionForFilename}-paduphoto.jpg`;
 
   return new NextResponse(imageBuffer, {
     status: 200,

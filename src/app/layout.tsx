@@ -3,7 +3,7 @@ import "./globals.css";
 import Navbar from "@/components/layouts/Navbar";
 
 export const metadata: Metadata = {
-  title: "Etalase Digital Padusan",
+  title: "PaduPhoto",
   description: "Galeri foto digital Desa Padusan",
 };
 

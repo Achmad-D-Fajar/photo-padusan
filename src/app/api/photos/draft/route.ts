@@ -36,7 +36,7 @@ export async function POST(request: NextRequest) {
       .single();
 
     const artistName = profile?.full_name || profile?.display_name || user.email || "Unknown";
-    const copyrightText = `© ${new Date().getUTCFullYear()} ${artistName} / Etalase Padusan. All rights reserved.`;
+    const copyrightText = `© ${new Date().getUTCFullYear()} ${artistName} / PaduPhoto. All rights reserved.`;
 
     const formData = await request.formData();
     const file = formData.get("file");
@@ -47,18 +47,27 @@ export async function POST(request: NextRequest) {
 
     const captionEn = (formData.get("caption_en") as string | null)?.trim() || "Untitled photo";
     const captionId = (formData.get("caption_id") as string | null)?.trim() || "Foto tanpa judul";
-    const tagsEn = parseTagsField(formData.get("tags_en"));
-    const tagsId = parseTagsField(formData.get("tags_id"));
+    
+    // 1. Definisikan tag wajib Anda di sini
+    const FORCED_TAGS_EN = ["padusan", "indonesia", "east java", "mojokerto"]; 
+    const FORCED_TAGS_ID = ["padusan", "indonesia", "jawa timur", "mojokerto"];
+
+    // 2. Ambil tag dari form (manual ataupun dari AI)
+    const rawTagsEn = parseTagsField(formData.get("tags_en"));
+    const rawTagsId = parseTagsField(formData.get("tags_id"));
+
+    // 3. Gabungkan tag input dengan tag wajib, lalu gunakan Set untuk membuang duplikat
+    const tagsEn = [...new Set([...rawTagsEn, ...FORCED_TAGS_EN])];
+    const tagsId = [...new Set([...rawTagsId, ...FORCED_TAGS_ID])];
     const publishDirectly = formData.get("publish_directly") === "true";
     const insertStatus = publishDirectly ? "published" : "draft";
 
     const rawBuffer = Buffer.from(await file.arrayBuffer());
     const photoId = crypto.randomUUID();
 
-    // 1. Upload the ORIGINAL, unwatermarked image first
     const originalStoragePath = `${user.id}/original_${photoId}.jpg`;
     const { error: originalUploadError } = await supabase.storage
-      .from("originals") // Ensure this bucket exists in Supabase
+      .from("originals")
       .upload(originalStoragePath, rawBuffer, {
         contentType: "image/jpeg",
         upsert: false,
@@ -75,7 +84,6 @@ export async function POST(request: NextRequest) {
       .from("originals")
       .getPublicUrl(originalStoragePath);
 
-    // 2. Process the watermarked thumbnail
     let processingResult;
     try {
       processingResult = await processImageForStorage(rawBuffer);
@@ -92,7 +100,7 @@ export async function POST(request: NextRequest) {
         tags: [...new Set([...tagsEn, ...tagsId])].slice(0, 30),
         artist: artistName,
         copyright: copyrightText,
-        software: "Etalase Padusan",
+        software: "PaduPhoto",
       });
     } catch (metaError) {
       finalBuffer = watermarkedBuffer;
@@ -114,13 +122,12 @@ export async function POST(request: NextRequest) {
       .from("thumbnails")
       .getPublicUrl(thumbStoragePath);
 
-    // 3. Insert both URLs into the database
     const { data: photo, error: insertError } = await supabase
       .from("photos")
       .insert({
         id: photoId,
         user_id: user.id,
-        image_url: originalImageUrl, // Fixed: Now saving the original URL
+        image_url: originalImageUrl,
         thumbnail_url: thumbnailUrl,
         caption_en: captionEn,
         caption_id: captionId,
