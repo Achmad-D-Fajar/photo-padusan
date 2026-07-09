@@ -8,7 +8,7 @@ export default function AboutPage() {
 
         <div className="prose prose-lg sm:prose-xl max-w-none text-[#111111] font-bold leading-relaxed space-y-6">
           <p className="bg-white border-4 border-[#111111] p-6 shadow-[6px_6px_0px_#111111]">
-            PaduPhoto adalah platform agregator foto yang menghubungkan fotografer komunitas Desa Padusan dengan dunia luar. Setiap karya yang dipublikasikan di sini dikurasi langsung oleh fotografernya, lengkap dengan caption dan tag yang dibantu dihasilkan oleh kecerdasan buatan agar lebih mudah ditemukan.
+            PaduStock adalah platform agregator foto yang menghubungkan fotografer komunitas Desa Padusan dengan dunia luar. Setiap karya yang dipublikasikan di sini dikurasi langsung oleh fotografernya, lengkap dengan caption dan tag yang dibantu dihasilkan oleh kecerdasan buatan agar lebih mudah ditemukan.
           </p>
           <p className="bg-white border-4 border-[#111111] p-6 shadow-[6px_6px_0px_#111111]">
             Tujuan kami sederhana: memberi ruang bagi fotografer lokal untuk memamerkan hasil jepretan terbaik mereka, sekaligus membuka jalan bagi siapa pun yang ingin menggunakan foto tersebut secara resmi melalui tautan microstock yang disediakan setiap fotografer.

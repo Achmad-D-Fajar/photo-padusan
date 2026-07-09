@@ -112,7 +112,7 @@ export default function ProfileForm({ userId, initialProfile }: ProfileFormProps
           </div>
 
           <div className="form-control border-t-4 border-[#111111] pt-8">
-            <label className="label" htmlFor="microstock_url"><span className={labelClass}>URL Microstock Utama</span></label>
+            <label className="label" htmlFor="microstock_url"><span className={labelClass}>URL Eksternal Publik</span></label>
             <input id="microstock_url" type="url" value={formFields.microstock_url} onChange={(e) => handleChange("microstock_url", e.target.value)} className={`${inputClass} ${fieldErrors.microstock_url ? "border-[#882255] bg-red-50" : ""}`} disabled={isLoading} />
             {fieldErrors.microstock_url && <span className="label-text-alt text-[#882255] font-bold mt-2">{fieldErrors.microstock_url}</span>}
           </div>
