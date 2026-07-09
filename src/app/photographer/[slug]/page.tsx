@@ -57,7 +57,9 @@ export default async function PhotographerPage({ params, searchParams }: Photogr
   }
 
   const supabase = await createClient();
-  const { data: profile, error: profileError } = await supabase.from("profiles").select("id, display_name, full_name, bio, avatar_url").ilike("display_name", escapeIlikePattern(slug)).maybeSingle();
+  const { data: profile, error: profileError } = await supabase.from("profiles")
+  .select("id, display_name, full_name, bio, avatar_url, microstock_url, whatsapp, public_email")
+  .ilike("display_name", escapeIlikePattern(slug)).maybeSingle();
   if (profileError || !profile) notFound();
 
   const { from, to } = computeRange(page, pageSize);
@@ -119,6 +121,38 @@ export default async function PhotographerPage({ params, searchParams }: Photogr
               {profile.bio}
             </p>
           )}
+          <div className="flex flex-wrap gap-4 mt-6">
+            {profile.microstock_url && (
+              <a
+                href={profile.microstock_url.startsWith('http') ? profile.microstock_url : `https://${profile.microstock_url}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn bg-[#332288] hover:bg-[#20155c] text-white border-4 border-[#111111] rounded-none font-bold text-sm uppercase shadow-[4px_4px_0px_#111111] hover:translate-y-[2px] hover:shadow-[2px_2px_0px_#111111] transition-all"
+              >
+                Kunjungi Portofolio
+              </a>
+            )}
+            
+            {profile.whatsapp && (
+              <a
+                href={`https://wa.me/${profile.whatsapp.replace(/[^0-9]/g, '')}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn bg-[#117733] hover:bg-[#0e5c27] text-white border-4 border-[#111111] rounded-none font-bold text-sm uppercase shadow-[4px_4px_0px_#111111] hover:translate-y-[2px] hover:shadow-[2px_2px_0px_#111111] transition-all"
+              >
+                WhatsApp
+              </a>
+            )}
+
+            {profile.public_email && (
+              <a
+                href={`mailto:${profile.public_email}`}
+                className="btn bg-[#CC6677] hover:bg-[#a8505e] text-white border-4 border-[#111111] rounded-none font-bold text-sm uppercase shadow-[4px_4px_0px_#111111] hover:translate-y-[2px] hover:shadow-[2px_2px_0px_#111111] transition-all"
+              >
+                Email
+              </a>
+            )}
+          </div>
         </div>
       </div>
 
