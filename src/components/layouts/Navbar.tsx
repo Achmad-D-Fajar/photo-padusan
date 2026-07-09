@@ -20,14 +20,14 @@ export default async function Navbar() {
 
   if (!supabaseUrl || !supabaseAnonKey) {
     return (
-      <div className="navbar bg-white border-b-4 border-[#111111] px-4 sm:px-8 shadow-[0px_4px_0px_#111111]">
+      <div className="navbar bg-white border-b-4 border-[#111111] px-2 sm:px-8 shadow-[0px_4px_0px_#111111]">
         <div className="navbar-start">
-          <Link href="/" className={`${delaGothic.className} text-xl sm:text-2xl uppercase tracking-wide text-[#111111] bg-[#88CCEE] border-4 border-[#111111] px-3 py-1 shadow-[4px_4px_0px_#111111]`}>
+          <Link href="/" className={`${delaGothic.className} text-base sm:text-2xl uppercase tracking-wide text-[#111111] bg-[#88CCEE] border-2 sm:border-4 border-[#111111] px-2 sm:px-3 py-1 shadow-[2px_2px_0px_#111111] sm:shadow-[4px_4px_0px_#111111]`}>
             PADUSTOCK
           </Link>
         </div>
         <div className="navbar-end">
-          <span className="font-bold text-[#882255] border-2 border-[#882255] px-3 py-1 bg-[#E5E5E5]">Konfigurasi server belum lengkap</span>
+          <span className="font-bold text-xs sm:text-sm text-[#882255] border-2 border-[#882255] px-2 py-1 bg-[#E5E5E5]">Konfigurasi server belum lengkap</span>
         </div>
       </div>
     );
@@ -59,24 +59,33 @@ export default async function Navbar() {
   const navLinkClass = "text-lg font-bold text-[#111111] hover:bg-[#332288] hover:text-[#E5E5E5] px-4 py-2 transition-colors border-2 border-transparent hover:border-[#111111]";
 
   return (
-    <div className="navbar bg-white border-b-4 border-[#111111] px-4 sm:px-8 shadow-[0px_4px_0px_#111111] sticky top-0 z-50">
-      <div className="navbar-start gap-2">
+    <div className="navbar bg-white border-b-4 border-[#111111] px-2 sm:px-8 shadow-[0px_4px_0px_#111111] sticky top-0 z-50">
+      <div className="navbar-start gap-1 sm:gap-2">
         <div className="dropdown lg:hidden">
-          <div tabIndex={0} role="button" className="btn bg-white border-2 border-[#111111] rounded-none shadow-[2px_2px_0px_#111111] hover:bg-[#E5E5E5]" aria-label="Buka menu navigasi">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-[#111111]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <div tabIndex={0} role="button" className="btn btn-sm sm:btn-md bg-white border-2 border-[#111111] rounded-none shadow-[2px_2px_0px_#111111] hover:bg-[#E5E5E5] h-9 min-h-0 px-2" aria-label="Buka menu navigasi">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-[#111111]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M4 6h16M4 12h16M4 18h16" />
             </svg>
           </div>
           <ul tabIndex={0} className="menu menu-lg dropdown-content bg-white rounded-none z-20 mt-4 w-64 p-4 border-4 border-[#111111] shadow-[8px_8px_0px_#111111] gap-2">
             <li><Link href="/" className={navLinkClass}>Photos</Link></li>
             <li><Link href="/about" className={navLinkClass}>About</Link></li>
-            {user && <li><Link href="/dashboard/upload" className={navLinkClass}>Upload</Link></li>}
+            {user ? (
+              <li><Link href="/dashboard/upload" className={navLinkClass}>Upload</Link></li>
+            ) : (
+              <>
+                {/* Tautan navigasi internal menu hamburger untuk perangkat mobile */}
+                <li className="sm:hidden border-t-2 border-[#111111] pt-2"><Link href="/login" className={navLinkClass}>Masuk</Link></li>
+                <li className="sm:hidden"><Link href="/register" className={`${navLinkClass} text-[#117733]`}>Daftar</Link></li>
+              </>
+            )}
           </ul>
         </div>
 
+        {/* Skala ukuran logo responsif (text-base ke text-2xl) */}
         <Link 
           href="/" 
-          className={`${delaGothic.className} text-xl sm:text-2xl uppercase tracking-wide text-[#111111] bg-[#88CCEE] border-4 border-[#111111] px-4 py-1.5 shadow-[4px_4px_0px_#111111] hover:bg-[#111111] hover:text-[#E5E5E5] hover:shadow-none hover:translate-x-[4px] hover:translate-y-[4px] transition-all`}
+          className={`${delaGothic.className} text-base sm:text-2xl uppercase tracking-wide text-[#111111] bg-[#88CCEE] border-2 sm:border-4 border-[#111111] px-2 sm:px-4 py-1 sm:py-1.5 shadow-[2px_2px_0px_#111111] sm:shadow-[4px_4px_0px_#111111] hover:bg-[#111111] hover:text-[#E5E5E5] hover:shadow-none hover:translate-x-[2px] sm:hover:translate-x-[4px] hover:translate-y-[2px] sm:hover:translate-y-[4px] transition-all whitespace-nowrap`}
         >
           PADUSTOCK
         </Link>
@@ -90,14 +99,14 @@ export default async function Navbar() {
         </ul>
       </div>
 
-      <div className="navbar-end gap-3">
+      <div className="navbar-end gap-2 sm:gap-3">
         {user ? (
           <div className="dropdown dropdown-end">
-            <div tabIndex={0} role="button" className="btn btn-ghost p-0 border-2 border-[#111111] rounded-none shadow-[2px_2px_0px_#111111] hover:translate-y-[2px] hover:shadow-none transition-all overflow-hidden h-12 w-12 bg-[#E5E5E5]" aria-label="Menu pengguna">
+            <div tabIndex={0} role="button" className="btn btn-ghost p-0 border-2 border-[#111111] rounded-none shadow-[2px_2px_0px_#111111] hover:translate-y-[2px] hover:shadow-none transition-all overflow-hidden h-9 w-9 sm:h-12 sm:w-12 bg-[#E5E5E5]" aria-label="Menu pengguna">
               {avatarUrl ? (
                 <img src={avatarUrl} alt={avatarLabel} className="w-full h-full object-cover" />
               ) : (
-                <div className="w-full h-full flex items-center justify-center font-bold text-2xl text-[#111111]">
+                <div className="w-full h-full flex items-center justify-center font-bold text-lg sm:text-2xl text-[#111111]">
                   {avatarInitial}
                 </div>
               )}
@@ -117,14 +126,21 @@ export default async function Navbar() {
             </ul>
           </div>
         ) : (
-          <>
-            <Link href="/login" className="btn bg-transparent hover:bg-[#111111] hover:text-[#E5E5E5] text-[#111111] border-2 border-[#111111] rounded-none font-bold text-lg px-6">
+          <div className="flex items-center gap-2">
+            {/* Optimasi tombol Masuk agar pas di layar ponsel */}
+            <Link 
+              href="/login" 
+              className="btn bg-transparent hover:bg-[#111111] hover:text-[#E5E5E5] text-[#111111] border-2 border-[#111111] rounded-none font-bold text-sm sm:text-lg px-2.5 sm:px-6 h-9 sm:h-12 min-h-0"
+            >
               Masuk
             </Link>
-            <Link href="/register" className="btn bg-[#117733] hover:bg-[#0e5c27] text-[#E5E5E5] border-2 border-[#111111] rounded-none font-bold text-lg shadow-[4px_4px_0px_#111111] hover:translate-y-[2px] hover:shadow-[2px_2px_0px_#111111] transition-all px-6 hidden sm:inline-flex">
+            <Link 
+              href="/register" 
+              className="btn bg-[#117733] hover:bg-[#0e5c27] text-[#E5E5E5] border-2 border-[#111111] rounded-none font-bold text-lg shadow-[4px_4px_0px_#111111] hover:translate-y-[2px] hover:shadow-[2px_2px_0px_#111111] transition-all px-6 hidden sm:inline-flex"
+            >
               Daftar
             </Link>
-          </>
+          </div>
         )}
       </div>
     </div>
