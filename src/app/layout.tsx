@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Atkinson_Hyperlegible, Space_Grotesk } from "next/font/google";
+import { Atkinson_Hyperlegible, Dela_Gothic_One } from "next/font/google";
 import "./globals.css";
 import Navbar from "@/components/layouts/Navbar";
 
@@ -9,10 +9,11 @@ const atkinson = Atkinson_Hyperlegible({
   variable: "--font-atkinson",
 });
 
-const spaceGrotesk = Space_Grotesk({
-  weight: ["400", "700"],
+// Menggunakan Dela Gothic One untuk identitas logo & display header yang radikal
+const delaGothic = Dela_Gothic_One({
+  weight: "400", 
   subsets: ["latin"],
-  variable: "--font-space-grotesk",
+  variable: "--font-dela-gothic",
 });
 
 export const metadata: Metadata = {
@@ -30,7 +31,7 @@ export default function RootLayout({
   return (
     <html lang="id" data-theme="light">
       <body 
-        className={`${atkinson.variable} ${spaceGrotesk.variable} font-content antialiased bg-[#E5E5E5] text-[#111111] min-h-screen`}
+        className={`${atkinson.variable} ${delaGothic.variable} font-content antialiased bg-[#E5E5E5] text-[#111111] min-h-screen`}
       >
         <Navbar />
         {children}

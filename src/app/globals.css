@@ -2,13 +2,12 @@
 @plugin "daisyui";
 
 @theme {
-  --font-display: var(--font-space-grotesk), sans-serif;
+  --font-display: var(--font-dela-gothic), sans-serif;
   --font-content: var(--font-atkinson), sans-serif;
 }
 
 @layer base {
   :root {
-    /* Enforce Strict Brutalism pada DaisyUI secara global */
     --rounded-box: 0rem;
     --rounded-btn: 0rem;
     --rounded-badge: 0rem;
@@ -21,7 +20,6 @@
     font-family: var(--font-content);
   }
 
-  /* Focus ring global untuk aksesibilitas keyboard/motorik */
   *:focus-visible {
     outline: none !important;
     box-shadow: 0 0 0 4px #44AA99, 0 0 0 6px #111111 !important;
