@@ -1,137 +1,232 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import type { Database } from "@/types/supabase";
-import AvatarUploader from "@/components/dashboard/AvatarUploader";
 
-type ProfileRow = Database["public"]["Tables"]["profiles"]["Row"];
-interface ProfileFormProps {
-  userId: string;
-  initialProfile: Pick<ProfileRow, "id" | "display_name" | "full_name" | "bio" | "whatsapp" | "public_email" | "microstock_url" | "avatar_url" | "created_at">;
+// Sesuaikan tipe profil dengan database Anda
+interface Profile {
+  id: string;
+  display_name: string;
+  full_name: string | null;
+  bio: string | null;
+  whatsapp: string | null;
+  public_email: string | null;
+  microstock_url: string | null;
+  avatar_url: string | null;
 }
 
-type Status = "idle" | "loading" | "success" | "error";
-const WHATSAPP_REGEX = /^62\d{8,13}$/;
-const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const URL_REGEX = /^https?:\/\/.+/i;
-const BIO_MAX_LENGTH = 500;
-const FULL_NAME_MAX_LENGTH = 100;
-
-interface FormFields { full_name: string; bio: string; whatsapp: string; public_email: string; microstock_url: string; }
-function toFormFields(p: ProfileFormProps["initialProfile"]): FormFields { return { full_name: p.full_name ?? "", bio: p.bio ?? "", whatsapp: p.whatsapp ?? "", public_email: p.public_email ?? "", microstock_url: p.microstock_url ?? "" }; }
-function fieldsEqual(a: FormFields, b: FormFields): boolean { return a.full_name === b.full_name && a.bio === b.bio && a.whatsapp === b.whatsapp && a.public_email === b.public_email && a.microstock_url === b.microstock_url; }
+interface ProfileFormProps {
+  userId: string;
+  initialProfile: Profile;
+}
 
 export default function ProfileForm({ userId, initialProfile }: ProfileFormProps) {
-  const [confirmedFields, setConfirmedFields] = useState<FormFields>(() => toFormFields(initialProfile));
-  const [formFields, setFormFields] = useState<FormFields>(() => toFormFields(initialProfile));
-  const [status, setStatus] = useState<Status>("idle");
-  const [message, setMessage] = useState("");
-  const [fieldErrors, setFieldErrors] = useState<Partial<Record<keyof FormFields, string>>>({});
+  const router = useRouter();
+  const supabase = createClient();
 
-  const isLoading = status === "loading";
-  const isDirty = !fieldsEqual(formFields, confirmedFields);
+  // State untuk form teks
+  const [formData, setFormData] = useState({
+    display_name: initialProfile.display_name || "",
+    full_name: initialProfile.full_name || "",
+    bio: initialProfile.bio || "",
+    whatsapp: initialProfile.whatsapp || "",
+    public_email: initialProfile.public_email || "",
+  });
 
-  const labelClass = "label-text font-bold text-lg text-[#111111] uppercase tracking-wide";
-  const subLabelClass = "label-text-alt font-bold text-[#111111] text-base";
-  const inputClass = "input w-full rounded-none border-4 border-[#111111] bg-white text-[#111111] font-bold shadow-[4px_4px_0px_#111111] focus:ring-4 focus:ring-[#44AA99] p-4 h-auto";
-  const textareaClass = "textarea w-full rounded-none border-4 border-[#111111] bg-white text-[#111111] font-bold shadow-[4px_4px_0px_#111111] focus:ring-4 focus:ring-[#44AA99] p-4";
+  // State khusus untuk file gambar
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [avatarPreview, setAvatarPreview] = useState<string | null>(initialProfile.avatar_url);
+  
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
-  function handleChange(field: keyof FormFields, value: string) { setFormFields((prev) => ({ ...prev, [field]: value })); if (status !== "loading") { setStatus("idle"); setMessage(""); } }
-  function handleReset() { setFormFields(confirmedFields); setFieldErrors({}); setStatus("idle"); setMessage(""); }
+  // Cek apakah ada perubahan (baik teks maupun gambar)
+  const isTextChanged = 
+    formData.display_name !== initialProfile.display_name ||
+    formData.full_name !== (initialProfile.full_name || "") ||
+    formData.bio !== (initialProfile.bio || "") ||
+    formData.whatsapp !== (initialProfile.whatsapp || "") ||
+    formData.public_email !== (initialProfile.public_email || "");
+  
+  // TOMBOL AKTIF JIKA: ada teks yang berubah ATAU ada file foto baru yang dipilih
+  const canSubmit = (isTextChanged || avatarFile !== null) && !isSubmitting;
 
-  function validate(fields: FormFields) {
-    const errors: Partial<Record<keyof FormFields, string>> = {};
-    if (fields.whatsapp.length > 0 && !WHATSAPP_REGEX.test(fields.whatsapp)) errors.whatsapp = "Format salah. Gunakan 62...";
-    if (fields.public_email.length > 0 && !EMAIL_REGEX.test(fields.public_email)) errors.public_email = "Email tidak valid.";
-    if (fields.microstock_url.length > 0 && !URL_REGEX.test(fields.microstock_url)) errors.microstock_url = "Harus diawali http/https.";
-    if (fields.bio.length > BIO_MAX_LENGTH) errors.bio = `Maksimal ${BIO_MAX_LENGTH} karakter.`;
-    if (fields.full_name.length > FULL_NAME_MAX_LENGTH) errors.full_name = `Maksimal ${FULL_NAME_MAX_LENGTH} karakter.`;
-    return errors;
-  }
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    const { name, value } = e.target;
+    setFormData((prev) => ({ ...prev, [name]: value }));
+  };
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    const trimmedFields = { full_name: formFields.full_name.trim(), bio: formFields.bio.trim(), whatsapp: formFields.whatsapp.trim(), public_email: formFields.public_email.trim(), microstock_url: formFields.microstock_url.trim() };
-    const errors = validate(trimmedFields);
-    setFieldErrors(errors);
-    if (Object.keys(errors).length > 0) { setStatus("error"); setMessage("Periksa kembali input Anda."); return; }
-
-    const prev = confirmedFields;
-    setConfirmedFields(trimmedFields); setFormFields(trimmedFields); setStatus("loading"); setMessage("");
-    try {
-      const supabase = createClient() as any;
-      const { error } = await supabase.from("profiles").update({
-        full_name: trimmedFields.full_name || null, bio: trimmedFields.bio || null, whatsapp: trimmedFields.whatsapp || null,
-        public_email: trimmedFields.public_email || null, microstock_url: trimmedFields.microstock_url || null
-      }).eq("id", userId);
-      if (error) throw error;
-      setStatus("success"); setMessage("Profil diperbarui.");
-    } catch (err) {
-      setConfirmedFields(prev); setStatus("error"); setMessage(err instanceof Error ? err.message : "Gagal memperbarui.");
+  // PERBAIKAN 1: Buat URL lokal untuk preview gambar agar tidak blank
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setAvatarFile(file);
+      setAvatarPreview(URL.createObjectURL(file)); 
     }
-  }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+    setMessage(null);
+
+    try {
+      let uploadedAvatarUrl = initialProfile.avatar_url;
+
+      // Jika ada file baru, unggah ke storage Supabase
+      if (avatarFile) {
+        const fileExt = avatarFile.name.split('.').pop();
+        const filePath = `${userId}/avatar_${Date.now()}.${fileExt}`;
+
+        const { error: uploadError } = await supabase.storage
+          .from("avatars") // Pastikan bucket 'avatars' sudah ada di Supabase Anda
+          .upload(filePath, avatarFile, { upsert: true });
+
+        if (uploadError) throw uploadError;
+
+        const { data: { publicUrl } } = supabase.storage
+          .from("avatars")
+          .getPublicUrl(filePath);
+
+        uploadedAvatarUrl = publicUrl;
+      }
+// Update profil di tabel 'profiles'
+      const { error: updateError } = await (supabase.from("profiles") as any)
+        .update({
+          display_name: formData.display_name,
+          full_name: formData.full_name,
+          bio: formData.bio,
+          whatsapp: formData.whatsapp,
+          public_email: formData.public_email,
+          avatar_url: uploadedAvatarUrl,
+        })
+        .eq("id", userId);
+
+      if (updateError) throw updateError;
+
+      setMessage({ type: "success", text: "Profil berhasil diperbarui!" });
+      setAvatarFile(null); // Reset file state setelah sukses agar tombol kembali disable
+      router.refresh(); // Refresh halaman agar navbar ikut terupdate
+    } catch (error: any) {
+      setMessage({ type: "error", text: error.message || "Terjadi kesalahan saat menyimpan profil." });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const inputClass = "input rounded-none border-4 border-[#111111] bg-white text-[#111111] font-bold text-lg shadow-[4px_4px_0px_#111111] focus:ring-4 focus:ring-[#44AA99] w-full p-4 h-auto";
+  const labelClass = "font-bold text-sm uppercase tracking-widest text-[#111111] mb-2 block";
 
   return (
-    <div className="card bg-white border-4 border-[#111111] shadow-[12px_12px_0px_#111111] rounded-none p-4 sm:p-8">
-      <div className="card-body gap-8 p-0">
-        <AvatarUploader userId={userId} initialAvatarUrl={initialProfile.avatar_url} fallbackLabel={initialProfile.full_name || initialProfile.display_name} />
-        
-        <div className="border-b-4 border-[#111111]" />
+    <form onSubmit={handleSubmit} className="space-y-12">
+      
+      {message && (
+        <div className={`p-6 border-4 border-[#111111] shadow-[6px_6px_0px_#111111] font-bold text-lg ${message.type === 'success' ? 'bg-[#117733] text-white' : 'bg-[#882255] text-white'}`}>
+          {message.text}
+        </div>
+      )}
 
-        <form onSubmit={handleSubmit} className="flex flex-col gap-8">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-            <div className="form-control">
-              <label className="label" htmlFor="display_name"><span className={labelClass}>Display Name</span></label>
-              <input id="display_name" value={initialProfile.display_name} className={`${inputClass} bg-[#E5E5E5] text-[#111111]/70 border-dashed border-2`} disabled readOnly />
-            </div>
-            <div className="form-control">
-              <label className="label" htmlFor="full_name"><span className={labelClass}>Nama Lengkap</span></label>
-              <input id="full_name" value={formFields.full_name} onChange={(e) => handleChange("full_name", e.target.value)} className={`${inputClass} ${fieldErrors.full_name ? "border-[#882255] bg-red-50" : ""}`} disabled={isLoading} />
-              {fieldErrors.full_name && <span className="label-text-alt text-[#882255] font-bold mt-2">{fieldErrors.full_name}</span>}
-            </div>
-          </div>
-
-          <div className="form-control">
-            <label className="label" htmlFor="bio"><span className={labelClass}>Bio</span></label>
-            <textarea id="bio" value={formFields.bio} onChange={(e) => handleChange("bio", e.target.value)} className={`${textareaClass} ${fieldErrors.bio ? "border-[#882255] bg-red-50" : ""}`} rows={5} disabled={isLoading} />
-            <label className="label"><span className={subLabelClass}>{formFields.bio.length}/{BIO_MAX_LENGTH}</span></label>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-            <div className="form-control">
-              <label className="label" htmlFor="whatsapp"><span className={labelClass}>WhatsApp Publik</span></label>
-              <input id="whatsapp" value={formFields.whatsapp} onChange={(e) => handleChange("whatsapp", e.target.value.replace(/\D/g, ""))} className={`${inputClass} ${fieldErrors.whatsapp ? "border-[#882255] bg-red-50" : ""}`} placeholder="62..." disabled={isLoading} />
-              <label className="label"><span className={subLabelClass}>Awali dengan 62 (Tanpa +)</span></label>
-            </div>
-            <div className="form-control">
-              <label className="label" htmlFor="public_email"><span className={labelClass}>Email Publik</span></label>
-              <input id="public_email" type="email" value={formFields.public_email} onChange={(e) => handleChange("public_email", e.target.value)} className={`${inputClass} ${fieldErrors.public_email ? "border-[#882255] bg-red-50" : ""}`} disabled={isLoading} />
-              {fieldErrors.public_email && <span className="label-text-alt text-[#882255] font-bold mt-2">{fieldErrors.public_email}</span>}
-            </div>
-          </div>
-
-          <div className="form-control border-t-4 border-[#111111] pt-8">
-            <label className="label" htmlFor="microstock_url"><span className={labelClass}>URL Eksternal Publik</span></label>
-            <input id="microstock_url" type="url" value={formFields.microstock_url} onChange={(e) => handleChange("microstock_url", e.target.value)} className={`${inputClass} ${fieldErrors.microstock_url ? "border-[#882255] bg-red-50" : ""}`} disabled={isLoading} />
-            {fieldErrors.microstock_url && <span className="label-text-alt text-[#882255] font-bold mt-2">{fieldErrors.microstock_url}</span>}
-          </div>
-
-          {status === "success" && <div role="alert" className="alert bg-[#44AA99] text-[#111111] border-4 border-[#111111] rounded-none font-bold text-lg p-6 shadow-[6px_6px_0px_#111111]"><span>{message}</span></div>}
-          {status === "error" && <div role="alert" className="alert bg-[#882255] text-white border-4 border-[#111111] rounded-none font-bold text-lg p-6 shadow-[6px_6px_0px_#111111]"><span>{message}</span></div>}
-
-          <div className="flex flex-col sm:flex-row gap-4 mt-6">
-            <button type="submit" className="btn bg-[#117733] hover:bg-[#0e5c27] text-white border-4 border-[#111111] rounded-none font-bold text-xl uppercase h-16 flex-1 shadow-[6px_6px_0px_#111111] hover:translate-y-[2px] hover:shadow-[4px_4px_0px_#111111] transition-all" disabled={isLoading || !isDirty}>
-              {isLoading ? "Menyimpan..." : "Simpan Perubahan"}
-            </button>
-            {isDirty && !isLoading && (
-              <button type="button" onClick={handleReset} className="btn bg-white hover:bg-[#E5E5E5] text-[#111111] border-4 border-[#111111] rounded-none font-bold text-xl uppercase h-16 flex-1 shadow-[6px_6px_0px_#111111] hover:translate-y-[2px] hover:shadow-[4px_4px_0px_#111111] transition-all">
-                Batalkan
-              </button>
+      {/* Bagian Foto Profil */}
+      <div className="bg-white border-4 border-[#111111] p-8 shadow-[8px_8px_0px_#111111]">
+        <div className="flex flex-col sm:flex-row items-center gap-8">
+          <div className="w-32 h-32 bg-[#E5E5E5] border-4 border-[#111111] shadow-[4px_4px_0px_#111111] overflow-hidden shrink-0 flex items-center justify-center relative">
+            {avatarPreview ? (
+              <img src={avatarPreview} alt="Preview Foto Profil" className="w-full h-full object-cover" />
+            ) : (
+              <span className="font-bold text-[#111111] text-4xl uppercase">
+                {formData.display_name.charAt(0) || "?"}
+              </span>
             )}
           </div>
-        </form>
+          <div className="flex flex-col gap-3 items-center sm:items-start w-full">
+            <h2 className="font-bold text-xl uppercase tracking-widest text-[#111111]">Foto Profil</h2>
+            <label className="btn bg-white hover:bg-[#111111] hover:text-[#E5E5E5] text-[#111111] border-4 border-[#111111] rounded-none font-bold text-base uppercase shadow-[4px_4px_0px_#111111] hover:translate-y-[2px] hover:shadow-[2px_2px_0px_#111111] transition-all cursor-pointer">
+              UBAH FOTO
+              <input type="file" accept="image/png, image/jpeg, image/webp" className="hidden" onChange={handleFileChange} />
+            </label>
+          </div>
+        </div>
       </div>
-    </div>
+
+      {/* Bagian Input Teks */}
+      <div className="space-y-8 border-t-4 border-[#111111] pt-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+          <div>
+            <label className={labelClass}>Display Name</label>
+            <input 
+              type="text" 
+              name="display_name" 
+              value={formData.display_name} 
+              onChange={handleInputChange} 
+              className={`${inputClass} border-dashed`} 
+              required 
+            />
+          </div>
+          <div>
+            <label className={labelClass}>Nama Lengkap</label>
+            <input 
+              type="text" 
+              name="full_name" 
+              value={formData.full_name} 
+              onChange={handleInputChange} 
+              className={inputClass} 
+            />
+          </div>
+        </div>
+
+        <div>
+          <label className={labelClass}>Bio</label>
+          <div className="relative">
+            <textarea 
+              name="bio" 
+              value={formData.bio} 
+              onChange={handleInputChange} 
+              rows={4} 
+              maxLength={500} 
+              className={inputClass} 
+            />
+            <span className="absolute bottom-3 right-3 text-sm font-bold text-gray-500 bg-white px-1">
+              {formData.bio.length}/500
+            </span>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+          <div>
+            <label className={labelClass}>WhatsApp Publik</label>
+            <input 
+              type="text" 
+              name="whatsapp" 
+              value={formData.whatsapp} 
+              onChange={handleInputChange} 
+              className={inputClass} 
+            />
+            <p className="text-sm font-bold mt-2">Awali dengan 62 (Tanpa +)</p>
+          </div>
+          <div>
+            <label className={labelClass}>Email Publik</label>
+            <input 
+              type="email" 
+              name="public_email" 
+              value={formData.public_email} 
+              onChange={handleInputChange} 
+              className={inputClass} 
+            />
+          </div>
+        </div>
+      </div>
+
+      <div className="pt-8 border-t-4 border-[#111111]">
+        {/* PERBAIKAN 2: disabled menggunakan variabel canSubmit */}
+        <button 
+          type="submit" 
+          disabled={!canSubmit} 
+          className="btn bg-[#332288] hover:bg-[#20155c] text-white border-4 border-[#111111] rounded-none font-bold text-xl uppercase h-16 w-full shadow-[6px_6px_0px_#111111] hover:translate-y-[2px] hover:shadow-[4px_4px_0px_#111111] transition-all disabled:opacity-50 disabled:hover:translate-y-0 disabled:hover:shadow-[6px_6px_0px_#111111]"
+        >
+          {isSubmitting ? "MENYIMPAN..." : "SIMPAN PERUBAHAN"}
+        </button>
+      </div>
+    </form>
   );
 }
