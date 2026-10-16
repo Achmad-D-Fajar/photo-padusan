@@ -1,36 +1,151 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 📸 Padustock
 
-## Getting Started
+**Padustock** is a community-based digital photo gallery and microstock platform for **Desa Padusan** (Padusan Village). Local photographers upload their work, and visitors can browse, download for free, or buy photos to support the photographers directly.
 
-First, run the development server:
+🔗 **Live site:** [padustock.vercel.app](https://padustock.vercel.app)
+
+> The interface is in Indonesian, and the repository is named `photo-padusan`.
+
+---
+
+## ✨ Features
+
+- **Photo gallery** – Browse community photos with pagination and a per-page selector.
+- **Search & filters** – Filter by caption, uploader, tags, and date range.
+- **Sorting** – Sort by newest, or alphabetically (ID / EN), ascending or descending.
+- **Free download / buy** – Each photo offers a free download or a purchase option that supports the photographer.
+- **Photo detail pages** – Every photo has its own page (`/photo/[id]`).
+- **Photographer profiles** – View all works by a photographer (`/photographer/[username]`).
+- **Upload dashboard** – Registered users upload their work at `/dashboard/upload`.
+- **AI-assisted captions** – Google Gemini helps generate photo descriptions, with the option to write captions and tags manually.
+- **Image & EXIF handling** – Server-side processing with `sharp` and `piexifjs`.
+- **Authentication** – Register / log in with Supabase Auth; `/dashboard/*` is protected by middleware.
+- **Open licensing** – Unless stated otherwise, all photos are licensed under [CC BY-NC-ND 4.0](https://creativecommons.org/licenses/by-nc-nd/4.0/).
+
+## 🧰 Tech Stack
+
+| Area | Technology |
+| --- | --- |
+| Framework | [Next.js 16](https://nextjs.org) (App Router) + [React 19](https://react.dev) |
+| Language | TypeScript |
+| Styling | Tailwind CSS 4, daisyUI 5 |
+| Auth & Database | [Supabase](https://supabase.com) (`@supabase/supabase-js`, `@supabase/ssr`) |
+| AI | [Google Generative AI](https://ai.google.dev) (`@google/generative-ai`) |
+| Images | `sharp`, `piexifjs` |
+| Linting | ESLint 9 |
+| Hosting | [Vercel](https://vercel.com) |
+
+## 🗺️ Main Routes
+
+| Route | Description | Access |
+| --- | --- | --- |
+| `/` | Photo gallery with search, filters, and sorting | Public |
+| `/photo/[id]` | Photo detail page | Public |
+| `/photographer/[username]` | Photographer profile and works | Public |
+| `/about` | About the community | Public |
+| `/terms`, `/privacy` | Terms & Conditions, Privacy Policy | Public |
+| `/login`, `/register` | Authentication | Logged-out only |
+| `/dashboard/*` | Dashboard, including `/dashboard/upload` | Logged-in only |
+
+Access rules are enforced in `middleware.ts`, which also refreshes Supabase sessions. Unauthenticated users are redirected to `/login`, and logged-in users are redirected from `/login` and `/register` to `/dashboard`.
+
+## 📁 Project Structure
+
+```
+photo-padusan/
+├── .vscode/            # Editor settings
+├── public/             # Static assets
+├── scripts/            # Helper scripts
+├── src/                # Application source (pages, components, utilities)
+├── middleware.ts       # Supabase session refresh + route protection
+├── next.config.ts      # Next.js configuration
+├── postcss.config.mjs  # PostCSS / Tailwind configuration
+├── eslint.config.mjs   # ESLint configuration
+└── tsconfig.json       # TypeScript configuration
+```
+
+## 🚀 Getting Started
+
+### Prerequisites
+
+- **Node.js 20.9+** and npm
+- A [Supabase](https://supabase.com) project
+- A [Google AI Studio](https://aistudio.google.com) API key for Gemini
+
+### 1. Clone the repository
+
+```bash
+git clone https://github.com/Achmad-D-Fajar/photo-padusan.git
+cd photo-padusan
+```
+
+### 2. Install dependencies
+
+```bash
+npm install
+```
+
+### 3. Configure environment variables
+
+Create a `.env.local` file in the project root:
+
+```env
+# Supabase (Project Settings → API)
+NEXT_PUBLIC_SUPABASE_URL=your-supabase-project-url
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your-supabase-anon-key
+
+# Google Gemini (use the variable name your code expects)
+GEMINI_API_KEY=your-gemini-api-key
+```
+
+> ⚠️ Never commit `.env.local`. It is already covered by `.gitignore`.
+>
+> If the Supabase variables are missing, the middleware skips authentication entirely, so make sure they are set.
+
+### 4. Run the development server
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000) in your browser.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## 📜 Available Scripts
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| Command | Description |
+| --- | --- |
+| `npm run dev` | Start the development server |
+| `npm run build` | Create an optimized production build |
+| `npm run start` | Run the production build |
+| `npm run lint` | Lint the codebase with ESLint |
 
-## Learn More
+## ☁️ Deployment
 
-To learn more about Next.js, take a look at the following resources:
+The easiest way to deploy is with [Vercel](https://vercel.com/new):
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+1. Push the repository to GitHub.
+2. Import the project in Vercel.
+3. Add the environment variables above in **Project Settings → Environment Variables**.
+4. Deploy.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+See the [Next.js deployment docs](https://nextjs.org/docs/app/building-your-application/deploying) for other options.
 
-## Deploy on Vercel
+## 📄 License
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Photos on Padustock are licensed under [CC BY-NC-ND 4.0](https://creativecommons.org/licenses/by-nc-nd/4.0/) unless stated otherwise. Add a separate license for the source code if you want others to reuse it.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## 🤝 Contributing
+
+Contributions, issues, and feature requests are welcome. Feel free to open an [issue](https://github.com/Achmad-D-Fajar/photo-padusan/issues) or submit a pull request.
+
+1. Fork the project
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m "Add amazing feature"`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+## 👤 Author
+
+**Achmad D. Fajar** – [@Achmad-D-Fajar](https://github.com/Achmad-D-Fajar)
+
+System by **Desa Padusan**.
