@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import ProtectedImage from "@/components/shared/ProtectedImage";
+import { serializeJsonLd } from "@/lib/json-ld";
 
 interface PhotoPageProps {
   params: Promise<{ id: string }>;
@@ -93,7 +94,7 @@ export default async function PhotoPage({ params }: PhotoPageProps) {
 
   return (
     <>
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: serializeJsonLd(jsonLd) }} />
 
       <main className="container mx-auto px-4 py-12 max-w-4xl">
         <nav className="text-lg font-bold mb-8 flex flex-wrap gap-2 items-center">

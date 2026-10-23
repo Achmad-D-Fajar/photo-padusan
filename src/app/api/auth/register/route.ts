@@ -86,7 +86,7 @@ export async function POST(request: NextRequest) {
 
     const { error: profileInsertError } = await supabaseAdmin
       .from("profiles")
-      .insert({ id: newUserId, display_name: displayName } as any);
+      .insert({ id: newUserId, display_name: displayName });
 
     if (profileInsertError) {
       // Rollback: hapus auth user yang sudah dibuat agar tidak ada

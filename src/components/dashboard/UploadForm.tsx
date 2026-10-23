@@ -2,20 +2,25 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import type { GeminiBilingualResult } from "@/lib/server/gemini-analysis";
+import { createClient } from "@/lib/supabase/client";
+import { MAX_PHOTO_SIZE_MB, PHOTO_ACCEPT, PHOTO_UPLOAD_BUCKET, validatePhotoFile } from "@/lib/photo-upload";
 
-const MAX_SOURCE_SIZE = 20 * 1024 * 1024;
 const MAX_CONTEXT_LEN = 300;
 
 interface EditableAnalysis { captionEn: string; captionId: string; tagsEnInput: string; tagsIdInput: string; }
-type Phase = "compose" | "analyzing" | "review" | "saving";
+type Phase = "compose" | "preparing" | "analyzing" | "review" | "saving";
 
 function tagsToInput(tags: string[]): string { return tags.join(", "); }
-function inputToTags(input: string): string[] { return input.split(",").map((t) => t.trim()).filter((t) => t.length > 0); }
+function inputToTags(input: string): string[] { return input.split(",").map((t) => t.trim().slice(0, 64)).filter((t) => t.length > 0).slice(0, 30); }
+
+async function discardUpload(path: string) {
+  await fetch("/api/photos/upload", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path }), keepalive: true }).catch(() => undefined);
+}
 
 export default function UploadForm() {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const uploadPathRef = useRef<string | null>(null);
 
   const [useAI, setUseAI] = useState(false);
   const [wantsMicrostockLink, setWantsMicrostockLink] = useState(true);
@@ -38,43 +43,79 @@ export default function UploadForm() {
     return () => { if (previewUrl) URL.revokeObjectURL(previewUrl); };
   }, [previewUrl]);
 
+  useEffect(() => () => {
+    if (uploadPathRef.current) void discardUpload(uploadPathRef.current);
+  }, []);
+
+  async function stagePhoto(file: File): Promise<string> {
+    const response = await fetch("/api/photos/upload", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: file.name, type: file.type, size: file.size }),
+    });
+    const result = await response.json();
+    if (!response.ok || !result.success) throw new Error(result.error || "Gagal menyiapkan unggahan.");
+    const { path, token, contentType } = result.data;
+    try {
+      const supabase = createClient();
+      const { error } = await supabase.storage.from(PHOTO_UPLOAD_BUCKET).uploadToSignedUrl(path, token, file, { contentType });
+      if (error) throw new Error(error.message);
+      return path;
+    } catch (error) { await discardUpload(path); throw error; }
+  }
+
+  async function ensureUpload(): Promise<string> {
+    if (!uploadPathRef.current) uploadPathRef.current = await stagePhoto(originalFile!);
+    return uploadPathRef.current;
+  }
+
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
-    if (previewUrl) URL.revokeObjectURL(previewUrl);
-
-    if (!file) {
-      setOriginalFile(null); setPreviewUrl(null); setOriginalSize(null); return;
-    }
-
-    if (!file.type.startsWith("image/")) {
-      setErrorMessage("File harus berupa gambar."); return;
-    }
-    if (file.size > MAX_SOURCE_SIZE) {
-      setErrorMessage("Ukuran file maksimal 20MB."); return;
-    }
-
-    setOriginalFile(file);
-    setPreviewUrl(URL.createObjectURL(file));
-    setOriginalSize(file.size);
+    if (uploadPathRef.current) void discardUpload(uploadPathRef.current);
+    uploadPathRef.current = null;
+    setOriginalFile(null); setPreviewUrl(null); setOriginalSize(null);
+    setEditableAnalysis(null);
     setPhase("compose");
     setErrorMessage("");
+    if (!file) return;
+    const validationError = validatePhotoFile(file);
+    if (validationError) { setErrorMessage(validationError); return; }
+    setPhase("preparing");
+    try {
+      const path = await stagePhoto(file);
+      uploadPathRef.current = path;
+      const response = await fetch("/api/photos/preview", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path }),
+      });
+      if (!response.ok) {
+        const result = await response.json();
+        throw new Error(result.error || "Gagal membaca gambar.");
+      }
+      setPreviewUrl(URL.createObjectURL(await response.blob()));
+      setOriginalFile(file); setOriginalSize(file.size);
+    } catch (error) {
+      if (uploadPathRef.current) void discardUpload(uploadPathRef.current);
+      uploadPathRef.current = null;
+      setErrorMessage(error instanceof Error ? error.message : "Gagal menyiapkan gambar.");
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    } finally { setPhase("compose"); }
   }
 
-  function buildBaseFormData(captionEn: string, captionId: string, tagsEn: string[], tagsId: string[]): FormData {
-    const fd = new FormData();
-    fd.append("file", originalFile!, originalFile!.name); 
-    fd.append("caption_en", captionEn.trim());
-    fd.append("caption_id", captionId.trim());
-    fd.append("tags_en", JSON.stringify(tagsEn));
-    fd.append("tags_id", JSON.stringify(tagsId));
-    fd.append("publish_directly", (!wantsMicrostockLink).toString());
-    return fd;
+  function buildBaseFormData(captionEn: string, captionId: string, tagsEn: string[], tagsId: string[]) {
+    return { caption_en: captionEn.trim(), caption_id: captionId.trim(), tags_en: tagsEn, tags_id: tagsId, publish_directly: !wantsMicrostockLink };
   }
 
-  async function postToDraftRoute(fd: FormData) {
-    const res = await fetch("/api/photos/draft", { method: "POST", body: fd });
-    const result = await res.json();
-    if (!res.ok || !result.success) throw new Error(result.error || "Gagal menyimpan.");
+  async function postToDraftRoute(data: ReturnType<typeof buildBaseFormData>) {
+    const path = await ensureUpload();
+    try {
+      const res = await fetch("/api/photos/draft", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...data, path }) });
+      const result = await res.json();
+      if (!res.ok || !result.success) throw new Error(result.error || "Gagal menyimpan.");
+      uploadPathRef.current = null;
+    } catch (error) {
+      void discardUpload(path);
+      uploadPathRef.current = null;
+      throw error;
+    }
   }
 
   async function handleManualSubmit() {
@@ -104,11 +145,8 @@ export default function UploadForm() {
     setPhase("analyzing"); setErrorMessage("");
 
     try {
-      const fd = new FormData();
-      fd.append("file", originalFile, originalFile.name);
-      if (aiContext.trim()) fd.append("description", aiContext.trim());
-
-      const res = await fetch("/api/photos/analyze", { method: "POST", body: fd });
+      const path = await ensureUpload();
+      const res = await fetch("/api/photos/analyze", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path, description: aiContext.trim() }) });
       const result = await res.json();
       if (!res.ok || !result.success) throw new Error(result.error || "Analisis gagal.");
 
@@ -141,7 +179,7 @@ export default function UploadForm() {
     } catch { }
   }
 
-  const isBusy = phase === "analyzing" || phase === "saving";
+  const isBusy = phase === "preparing" || phase === "analyzing" || phase === "saving";
   const saveActionLabel = wantsMicrostockLink ? "Simpan sebagai Draf" : "Publikasikan Sekarang";
 
   const inputClass = "file-input file-input-bordered w-full rounded-none border-4 border-[#111111] bg-white text-[#111111] text-lg font-bold h-16 shadow-[4px_4px_0px_#111111] focus:ring-4 focus:ring-[#44AA99]";
@@ -157,9 +195,10 @@ export default function UploadForm() {
         <div className="card-body gap-8 p-0">
           <div className="form-control">
             <label className="label items-start p-0 mb-2" htmlFor="file-input">
-              <span className={labelClass}>Pilih gambar (maks. 20MB)</span>
+              <span className={labelClass}>Pilih gambar (maks. {MAX_PHOTO_SIZE_MB} MB, termasuk HEIC)</span>
             </label>
-            <input id="file-input" ref={fileInputRef} type="file" accept="image/*" onChange={handleFileChange} className={inputClass} disabled={isBusy} />
+            <input id="file-input" ref={fileInputRef} type="file" accept={PHOTO_ACCEPT} onChange={handleFileChange} className={inputClass} disabled={isBusy} />
+            {phase === "preparing" && <p role="status" className="font-bold mt-4">Menyiapkan gambar dan pratinjau…</p>}
           </div>
 
           {previewUrl && originalFile && (
@@ -188,7 +227,7 @@ export default function UploadForm() {
             <div className="space-y-6">
               <div className="form-control">
                 <label className="label items-start p-0 mb-2" htmlFor="manual-caption"><span className={labelClass}>Caption Manual</span></label>
-                <textarea id="manual-caption" value={manualCaption} onChange={(e) => setManualCaption(e.target.value)} className={textareaClass} rows={4} placeholder="Tulis deskripsi..." disabled={isBusy} />
+                <textarea id="manual-caption" value={manualCaption} onChange={(e) => setManualCaption(e.target.value)} className={textareaClass} rows={4} maxLength={300} placeholder="Tulis deskripsi..." disabled={isBusy} />
               </div>
               <div className="form-control">
                 <label className="label items-start p-0 mb-2" htmlFor="manual-tags"><span className={labelClass}>Tags Manual</span></label>
@@ -249,7 +288,7 @@ export default function UploadForm() {
                     {copiedField === "caption_en" ? "✓ DISALIN" : "SALIN"}
                   </button>
                 </label>
-                <textarea id="edit-caption-en" value={editableAnalysis.captionEn} onChange={(e) => setEditableAnalysis((prev) => prev ? { ...prev, captionEn: e.target.value } : prev)} className={textareaClass} rows={3} disabled={phase === "saving"} />
+                <textarea id="edit-caption-en" value={editableAnalysis.captionEn} onChange={(e) => setEditableAnalysis((prev) => prev ? { ...prev, captionEn: e.target.value } : prev)} className={textareaClass} rows={3} maxLength={300} disabled={phase === "saving"} />
               </div>
 
               <div className="form-control">
@@ -259,7 +298,7 @@ export default function UploadForm() {
                     {copiedField === "caption_id" ? "✓ DISALIN" : "SALIN"}
                   </button>
                 </label>
-                <textarea id="edit-caption-id" value={editableAnalysis.captionId} onChange={(e) => setEditableAnalysis((prev) => prev ? { ...prev, captionId: e.target.value } : prev)} className={textareaClass} rows={3} disabled={phase === "saving"} />
+                <textarea id="edit-caption-id" value={editableAnalysis.captionId} onChange={(e) => setEditableAnalysis((prev) => prev ? { ...prev, captionId: e.target.value } : prev)} className={textareaClass} rows={3} maxLength={300} disabled={phase === "saving"} />
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">

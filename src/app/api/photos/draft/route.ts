@@ -1,149 +1,78 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
 import { processImageForStorage } from "@/lib/server/image-processing";
 import { embedMetadata } from "@/lib/server/exif-writer";
+import { requirePhotoUser, readStagedPhoto, removeStagedPhoto, removePhotoObject } from "@/lib/server/photo-upload";
+import { ApiError, apiErrorResponse, readJson } from "@/lib/server/api-error";
+import { PHOTO_UPLOAD_BUCKET, isOwnedUploadPath } from "@/lib/photo-upload";
 import { captionToSlug } from "@/lib/slug";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 export const runtime = "nodejs";
+export const maxDuration = 120;
 
-const MAX_FILE_SIZE = 20 * 1024 * 1024;
-
-function parseTagsField(value: FormDataEntryValue | null): string[] {
-  if (typeof value !== "string") return [];
-  try {
-    const parsed = JSON.parse(value);
-    return Array.isArray(parsed)
-      ? parsed.filter((t): t is string => typeof t === "string").map((t) => t.trim()).filter(Boolean)
-      : [];
-  } catch {
-    return [];
+function parseTags(value: unknown, required: string[]): string[] {
+  if (!Array.isArray(value) || value.length > 30 || value.some(tag => typeof tag !== "string" || tag.length > 64)) {
+    throw new ApiError(400, "Tags harus berupa maksimal 30 teks (maks. 64 karakter per tag).");
   }
+  return [...new Set([...required, ...value.map(tag => tag.trim()).filter(Boolean)])].slice(0, 30);
 }
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient();
-    const { data: { user }, error: userError } = await supabase.auth.getUser();
-
-    if (userError || !user) {
-      return NextResponse.json({ success: false, error: "Unauthorized." }, { status: 401 });
-    }
-
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("display_name, full_name")
-      .eq("id", user.id)
-      .single();
-
-    const artistName = profile?.full_name || profile?.display_name || user.email || "Unknown";
-    // MENGUBAH TEKS HAK CIPTA EXIF KE PADUSTOCK
-    const copyrightText = `© ${new Date().getUTCFullYear()} ${artistName} / Padustock. All rights reserved.`;
-
-    const formData = await request.formData();
-    const file = formData.get("file");
-    
-    if (!file || !(file instanceof File)) {
-      return NextResponse.json({ success: false, error: "Tidak ada file yang dikirim." }, { status: 400 });
-    }
-
-    const captionEn = (formData.get("caption_en") as string | null)?.trim() || "Untitled photo";
-    const captionId = (formData.get("caption_id") as string | null)?.trim() || "Foto tanpa judul";
-    
-    const FORCED_TAGS_EN = ["padusan", "indonesia", "east java", "mojokerto"]; 
-    const FORCED_TAGS_ID = ["padusan", "indonesia", "jawa timur", "mojokerto"];
-
-    const rawTagsEn = parseTagsField(formData.get("tags_en"));
-    const rawTagsId = parseTagsField(formData.get("tags_id"));
-
-    const tagsEn = [...new Set([...rawTagsEn, ...FORCED_TAGS_EN])];
-    const tagsId = [...new Set([...rawTagsId, ...FORCED_TAGS_ID])];
-    const publishDirectly = formData.get("publish_directly") === "true";
-    const insertStatus = publishDirectly ? "published" : "draft";
-
-    const rawBuffer = Buffer.from(await file.arrayBuffer());
+    const { supabase, user } = await requirePhotoUser();
+    const body = await readJson(request);
+    const path = body.path;
+    if (!isOwnedUploadPath(path, user.id)) throw new ApiError(400, "Lokasi unggahan tidak valid.");
     const photoId = crypto.randomUUID();
-
-    const originalStoragePath = `${user.id}/original_${photoId}.jpg`;
-    const { error: originalUploadError } = await supabase.storage
-      .from("originals")
-      .upload(originalStoragePath, rawBuffer, {
-        contentType: "image/jpeg",
-        upsert: false,
-      });
-
-    if (originalUploadError) {
-      return NextResponse.json(
-        { success: false, error: `Gagal mengunggah file asli: ${originalUploadError.message}` },
-        { status: 500 }
-      );
-    }
-
-    const { data: { publicUrl: originalImageUrl } } = supabase.storage
-      .from("originals")
-      .getPublicUrl(originalStoragePath);
-
-    let processingResult;
+    let originalPath: string | null = null;
+    let thumbnailPath: string | null = null;
+    let committed = false;
     try {
-      processingResult = await processImageForStorage(rawBuffer);
-    } catch (sharpError) {
-      return NextResponse.json({ success: false, error: "Gagal memproses gambar." }, { status: 422 });
-    }
-
-    const { watermarkedBuffer } = processingResult;
-
-    let finalBuffer: Buffer;
-    try {
-      finalBuffer = embedMetadata(watermarkedBuffer, {
+      const captionEn = typeof body.caption_en === "string" ? body.caption_en.trim() : "";
+      const captionId = typeof body.caption_id === "string" ? body.caption_id.trim() : "";
+      if ((!captionEn && !captionId) || captionEn.length > 300 || captionId.length > 300) {
+        throw new ApiError(400, "Isi minimal satu caption (maks. 300 karakter per bahasa).");
+      }
+      const tagsEn = parseTags(body.tags_en, ["padusan", "indonesia", "east java", "mojokerto"]);
+      const tagsId = parseTags(body.tags_id, ["padusan", "indonesia", "jawa timur", "mojokerto"]);
+      const rawBuffer = await readStagedPhoto(supabase, user.id, path);
+      // Validate and decode before creating permanent storage objects.
+      const { watermarkedBuffer } = await processImageForStorage(rawBuffer);
+      const { data: profile } = await supabase.from("profiles").select("display_name, full_name").eq("id", user.id).single();
+      const artist = profile?.full_name || profile?.display_name || "Fotografer Padustock";
+      const finalBuffer = embedMetadata(watermarkedBuffer, {
         caption: `${captionEn} | ${captionId}`,
-        tags: [...new Set([...tagsEn, ...tagsId])].slice(0, 30),
-        artist: artistName,
-        copyright: copyrightText,
-        // MENGUBAH EXIF SOFTWARE KE PADUSTOCK
-        software: "Padustock",
+        tags: [...new Set([...tagsEn, ...tagsId])].slice(0, 30), artist,
+        copyright: `© ${new Date().getUTCFullYear()} ${artist} / Padustock. All rights reserved.`, software: "Padustock",
       });
-    } catch (metaError) {
-      finalBuffer = watermarkedBuffer;
+      const thumbPath = `${user.id}/${captionToSlug(captionEn || captionId, photoId)}`;
+      thumbnailPath = thumbPath;
+      const { error: thumbnailError } = await supabase.storage.from("thumbnails").upload(thumbPath, finalBuffer, { contentType: "image/jpeg", upsert: false });
+      if (thumbnailError) throw new ApiError(502, "Gagal mengunggah thumbnail.");
+
+      const destination = `${user.id}/original_${photoId}.${path.split(".").pop()}`;
+      originalPath = destination;
+      const { error: moveError } = await createAdminClient().storage.from(PHOTO_UPLOAD_BUCKET).move(path, destination, { destinationBucket: "originals" });
+      if (moveError) throw new ApiError(502, "Gagal menyimpan gambar asli.");
+      const { data: { publicUrl: imageUrl } } = supabase.storage.from("originals").getPublicUrl(destination);
+      const { data: { publicUrl: thumbnailUrl } } = supabase.storage.from("thumbnails").getPublicUrl(thumbPath);
+      const { data: photo, error: insertError } = await supabase.from("photos").insert({
+        id: photoId, user_id: user.id, image_url: imageUrl, thumbnail_url: thumbnailUrl,
+        caption_en: captionEn || null, caption_id: captionId || null, tags_en: tagsEn, tags_id: tagsId,
+        status: body.publish_directly === true ? "published" : "draft", microstock_url: null,
+      }).select("id").single();
+      if (insertError || !photo) throw new ApiError(500, "Gagal menyimpan foto ke database.");
+      committed = true;
+      return NextResponse.json({ success: true, data: photo }, { status: 201 });
+    } finally {
+      if (!committed) {
+        const results = await Promise.allSettled([
+          removeStagedPhoto(supabase, user.id, path),
+          ...(originalPath ? [removePhotoObject(supabase, "originals", originalPath)] : []),
+          ...(thumbnailPath ? [removePhotoObject(supabase, "thumbnails", thumbnailPath)] : []),
+        ]);
+        for (const result of results) if (result.status === "rejected") console.error("[upload cleanup]", result.reason);
+      }
     }
-
-    const thumbStoragePath = `${user.id}/${captionToSlug(captionEn, photoId)}`;
-    const { error: uploadError } = await supabase.storage
-      .from("thumbnails")
-      .upload(thumbStoragePath, finalBuffer, {
-        contentType: "image/jpeg",
-        upsert: false,
-      });
-
-    if (uploadError) {
-      return NextResponse.json({ success: false, error: "Gagal mengunggah thumbnail." }, { status: 500 });
-    }
-
-    const { data: { publicUrl: thumbnailUrl } } = supabase.storage
-      .from("thumbnails")
-      .getPublicUrl(thumbStoragePath);
-
-    const { data: photo, error: insertError } = await supabase
-      .from("photos")
-      .insert({
-        id: photoId,
-        user_id: user.id,
-        image_url: originalImageUrl,
-        thumbnail_url: thumbnailUrl,
-        caption_en: captionEn,
-        caption_id: captionId,
-        tags_en: tagsEn,
-        tags_id: tagsId,
-        status: insertStatus,
-        microstock_url: publishDirectly ? null : undefined,
-      })
-      .select()
-      .single();
-
-    if (insertError) {
-      return NextResponse.json({ success: false, error: "Gagal menyimpan ke database." }, { status: 500 });
-    }
-
-    return NextResponse.json({ success: true, data: photo }, { status: 201 });
-  } catch (error) {
-    return NextResponse.json({ success: false, error: "Kesalahan server internal." }, { status: 500 });
-  }
+  } catch (error) { return apiErrorResponse(error); }
 }

@@ -1,4 +1,4 @@
-import type { SupabaseClient, QueryData } from "@supabase/supabase-js";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/supabase"; 
 import { escapeIlikePattern } from "@/lib/supabase/ilike";
 

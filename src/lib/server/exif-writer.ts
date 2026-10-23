@@ -204,8 +204,6 @@ function injectIptc(jpegBuffer: Buffer, params: EmbedMetadataParams): Buffer {
 
   // Find the end of the first APP1 segment (if present) so we insert
   // APP13 right after EXIF, not before it.
-  const soi = jpegBuffer.slice(0, 2); // FFD8
-
   let insertAt = 2; // default: right after SOI
 
   if (jpegBuffer[2] === 0xff && jpegBuffer[3] === 0xe1) {

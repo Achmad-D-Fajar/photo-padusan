@@ -69,7 +69,7 @@ export default function AvatarUploader({ userId, initialAvatarUrl, fallbackLabel
       const extension = extensionFromMimeType(compressedBlob.type);
       const fileName = `${userId}/${crypto.randomUUID()}.${extension}`;
 
-      const supabase = createClient() as any;
+      const supabase = createClient();
 
       const { error: uploadError } = await supabase.storage.from("avatars").upload(fileName, compressedBlob, {
         contentType: compressedBlob.type,

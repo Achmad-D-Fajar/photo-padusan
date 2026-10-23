@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import type { PublicPhotoItem } from "@/lib/queries/public-photos";
 import { LOAD_MORE_INCREMENT } from "@/lib/pagination";
@@ -25,7 +25,10 @@ export default function PhotoGrid({ photos, totalCount, initialOffset, isFilteri
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [loadMoreError, setLoadMoreError] = useState("");
 
-  useEffect(() => { setItems(photos); setLoadMoreError(""); }, [photos, initialOffset]);
+  const [source, setSource] = useState(photos);
+  if (source !== photos) {
+    setSource(photos); setItems(photos); setLoadMoreError("");
+  }
 
   const remainingCount = totalCount - (initialOffset + items.length);
   const hasMore = remainingCount > 0;

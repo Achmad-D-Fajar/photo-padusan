@@ -1,4 +1,4 @@
-export interface Database {
+export type Database = {
   public: {
     Tables: {
       profiles: {
@@ -111,5 +111,11 @@ export interface Database {
         Relationships: [];
       };
     };
+    Functions: {
+      consume_ai_request: {
+        Args: Record<string, never>;
+        Returns: boolean;
+      };
+    };
   }; // 
-} // 
+};

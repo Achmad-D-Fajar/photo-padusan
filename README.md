@@ -19,6 +19,7 @@
 - **Upload dashboard** – Registered users upload their work at `/dashboard/upload`.
 - **AI-assisted captions** – Google Gemini helps generate photo descriptions, with the option to write captions and tags manually.
 - **Image & EXIF handling** – Server-side processing with `sharp` and `piexifjs`.
+- **50 MB photo uploads, including HEIC/HEIF** – Files upload directly to Supabase; HEIC is decoded on the server and shown as a JPEG preview. Original downloads preserve the uploaded format.
 - **Authentication** – Register / log in with Supabase Auth; `/dashboard/*` is protected by middleware.
 - **Open licensing** – Unless stated otherwise, all photos are licensed under [CC BY-NC-ND 4.0](https://creativecommons.org/licenses/by-nc-nd/4.0/).
 
@@ -96,6 +97,12 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your-supabase-anon-key
 
 # Google Gemini (use the variable name your code expects)
 GEMINI_API_KEY=your-gemini-api-key
+
+# Server-only: account creation, storage finalization, signed downloads
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+
+# Vercel sends this bearer token to the daily staging cleanup job
+CRON_SECRET=your-long-random-secret
 ```
 
 > ⚠️ Never commit `.env.local`. It is already covered by `.gitignore`.
@@ -103,6 +110,28 @@ GEMINI_API_KEY=your-gemini-api-key
 > If the Supabase variables are missing, the middleware skips authentication entirely, so make sure they are set.
 
 ### 4. Run the development server
+
+Before running the updated upload flow, apply
+[`supabase/migrations/202610240001_photo_uploads.sql`](supabase/migrations/202610240001_photo_uploads.sql)
+in the Supabase SQL editor (or with your normal migration runner). It creates a
+private `photo-uploads` staging bucket, raises the `originals` bucket limit to
+50 MiB, adds owner storage policies, and installs an atomic limit of 20 AI
+requests per user per hour shared by translation and analysis. The project's
+global Storage file size limit must also allow at least 50 MiB. Existing
+`originals` and `thumbnails` buckets and photo/profile policies are still required.
+
+The browser sends image bytes directly to Storage because Vercel Functions
+limit request bodies to 4.5 MB. Processing routes accept JSON references to the
+authenticated user's staged file, check its stored size, and validate image
+content before creating permanent files. Photos are limited to 80 megapixels.
+HEIC/HEIF uses `heic-decode` because Sharp's prebuilt binaries lack HEVC decoding.
+
+Abandoned uploads are private and are deleted after 24 hours by the daily cron
+in `vercel.json`. Set `CRON_SECRET` in Vercel. For other hosts, schedule an
+authenticated GET to `/api/maintenance/uploads` daily with
+`Authorization: Bearer <CRON_SECRET>`. Failed saves also clean their staged and
+permanent files immediately. Free downloads redirect to a short-lived Storage
+URL, so a 50 MB original does not pass through a function response.
 
 ```bash
 npm run dev
@@ -118,6 +147,11 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 | `npm run build` | Create an optimized production build |
 | `npm run start` | Run the production build |
 | `npm run lint` | Lint the codebase with ESLint |
+| `npm test` | Run local security, upload lifecycle, and image processing regression tests |
+
+For an additional real HEIC decoder check, set `HEIC_TEST_FILE` to a local HEIC
+file before running `npm test`. Normal tests generate their own JPEG fixtures
+and use mocked Supabase/Gemini services; they do not modify a deployed project.
 
 ## ☁️ Deployment
 

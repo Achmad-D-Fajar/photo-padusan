@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient, escapeLikePattern } from "@/lib/supabase/admin";
+import { createClient } from "@/lib/supabase/server";
+import { readJson, apiErrorResponse } from "@/lib/server/api-error";
 
 export const runtime = "nodejs";
 
@@ -7,7 +9,7 @@ const GENERIC_ERROR = "Email/Display Name atau password salah.";
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
+    const body = await readJson(request);
     const identifier =
       typeof body?.identifier === "string" ? body.identifier.trim() : "";
     const password = typeof body?.password === "string" ? body.password : "";
@@ -19,62 +21,36 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Deteksi: jika mengandung '@', anggap sebagai email langsung —
-    // teruskan tanpa query tambahan.
-    const isEmail = identifier.includes("@");
-
-    if (isEmail) {
-      return NextResponse.json(
-        { success: true, data: { email: identifier.toLowerCase() } },
-        { status: 200 }
-      );
+    let email = identifier.toLowerCase();
+    if (!identifier.includes("@")) {
+      const admin = createAdminClient();
+      const { data: profile, error } = await admin.from("profiles")
+        .select("id").ilike("display_name", escapeLikePattern(identifier)).maybeSingle();
+      const { data } = !error && profile
+        ? await admin.auth.admin.getUserById(profile.id)
+        : { data: null };
+      if (!data?.user?.email) {
+        return NextResponse.json({ success: false, error: GENERIC_ERROR }, { status: 401 });
+      }
+      email = data.user.email;
     }
 
-    const supabaseAdmin = createAdminClient();
-
-    // Cari UUID berdasarkan display_name (case-insensitive, di-escape
-    // agar '_' dalam nama tidak diperlakukan sebagai wildcard ILIKE).
-   const { data, error: profileError } = await supabaseAdmin
-      .from("profiles")
-      .select("id")
-      .ilike("display_name", escapeLikePattern(identifier))
-      .maybeSingle();
-
-    // Override the "never" type strictly to what we know it returns
-    const profile = data as { id: string } | null;
-
-    if (profileError || !profile) {
-      // Pesan generik: tidak membocorkan apakah Display Name ini ada atau tidak
-      // (mitigasi user enumeration).
+    // Use the request-scoped client so authentication sets this browser's
+    // cookies and never changes the singleton service-role client's session.
+    const supabase = await createClient();
+    const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+    if (signInError) {
       return NextResponse.json(
         { success: false, error: GENERIC_ERROR },
         { status: 401 }
       );
     }
 
-    // Ambil email asli dari auth.users via Admin API.
-    const { data: userResult, error: userError } =
-      await supabaseAdmin.auth.admin.getUserById(profile.id);
-
-    if (userError || !userResult?.user?.email) {
-      return NextResponse.json(
-        { success: false, error: GENERIC_ERROR },
-        { status: 401 }
-      );
-    }
-
-    // Password TIDAK diverifikasi di sini. Email diteruskan ke client
-    // agar proses login sesungguhnya terjadi lewat sesi bawaan Supabase
-    // (supabase.auth.signInWithPassword) di browser.
     return NextResponse.json(
-      { success: true, data: { email: userResult.user.email } },
+      { success: true },
       { status: 200 }
     );
   } catch (error) {
-    console.error("Unexpected error in /api/auth/login:", error);
-    return NextResponse.json(
-      { success: false, error: "Unexpected server error." },
-      { status: 500 }
-    );
+    return apiErrorResponse(error);
   }
 }

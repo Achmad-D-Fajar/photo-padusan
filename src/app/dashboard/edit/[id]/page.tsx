@@ -32,7 +32,7 @@ export default async function EditPhotoPage({ params }: EditPhotoPageProps) {
         </p>
       </div>
 
-      <EditPhotoForm photo={photo as any} />
+      <EditPhotoForm photo={photo} />
     </main>
   );
 }

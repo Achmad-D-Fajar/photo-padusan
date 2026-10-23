@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
 
 type Status = "idle" | "loading" | "error";
 
@@ -26,11 +25,6 @@ export default function LoginPage() {
       if (!resolveResponse.ok || !resolveResult.success) {
         throw new Error(resolveResult.error || "Email/Display Name atau password salah.");
       }
-      const resolvedEmail: string = resolveResult.data.email;
-      const supabase = createClient();
-      const { error: signInError } = await supabase.auth.signInWithPassword({ email: resolvedEmail, password });
-      if (signInError) throw new Error("Email/Display Name atau password salah.");
-
       router.push("/dashboard"); router.refresh();
     } catch (err) {
       setStatus("error"); setErrorMessage(err instanceof Error ? err.message : "Terjadi kesalahan.");

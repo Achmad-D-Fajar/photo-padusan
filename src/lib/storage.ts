@@ -5,8 +5,10 @@ export function extractStoragePath(
   publicUrl: string,
   bucketName: string
 ): string | null {
-  const marker = `/${bucketName}/`;
-  const idx = publicUrl.indexOf(marker);
-  if (idx === -1) return null;
-  return decodeURIComponent(publicUrl.slice(idx + marker.length));
+  try {
+    const { pathname } = new URL(publicUrl);
+    const marker = `/storage/v1/object/public/${bucketName}/`;
+    if (!pathname.startsWith(marker)) return null;
+    return decodeURIComponent(pathname.slice(marker.length));
+  } catch { return null; }
 }

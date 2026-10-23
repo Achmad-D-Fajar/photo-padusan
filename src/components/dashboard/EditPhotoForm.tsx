@@ -3,18 +3,17 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { extractStoragePath } from "@/lib/storage";
 import type { Database } from "@/types/supabase";
 
 type PhotoRow = Database["public"]["Tables"]["photos"]["Row"];
 interface EditPhotoFormProps {
-  photo: Pick<PhotoRow, "id" | "user_id" | "thumbnail_url" | "caption_en" | "caption_id" | "tags_en" | "tags_id" | "created_at" | "microstock_url">;
+  photo: Pick<PhotoRow, "id" | "user_id" | "thumbnail_url" | "caption_en" | "caption_id" | "tags_en" | "tags_id" | "created_at" | "microstock_url" | "status">;
 }
 type ActionStatus = "idle" | "saving-draft" | "publishing" | "deleting" | "error" | "success";
 
 const URL_REGEX = /^https?:\/\/.+/i;
 const CAPTION_MAX_LENGTH = 300;
-const MAX_TAGS = 10;
+const MAX_TAGS = 30;
 
 function tagsToString(tags: string[] | null | undefined): string { return Array.isArray(tags) ? tags.join(", ") : ""; }
 function stringToTags(value: string): string[] { return value.split(",").map((t) => t.trim()).filter((t) => t.length > 0).slice(0, MAX_TAGS); }
@@ -26,7 +25,7 @@ export default function EditPhotoForm({ photo }: EditPhotoFormProps) {
   const [tagsIdInput, setTagsIdInput] = useState(tagsToString(photo.tags_id));
   const [tagsEnInput, setTagsEnInput] = useState(tagsToString(photo.tags_en));
   const [microstockUrl, setMicrostockUrl] = useState(photo.microstock_url || "");
-  const [currentStatus, setCurrentStatus] = useState<"draft" | "published" | "archived">(photo.microstock_url ? "published" : "draft");
+  const [currentStatus, setCurrentStatus] = useState(photo.status);
   const [actionStatus, setActionStatus] = useState<ActionStatus>("idle");
   const [message, setMessage] = useState("");
   const [fieldErrors, setFieldErrors] = useState<{ captionId?: string; captionEn?: string; microstockUrl?: string }>({});
@@ -51,12 +50,12 @@ export default function EditPhotoForm({ photo }: EditPhotoFormProps) {
     if (!validateCommon()) { setActionStatus("error"); setMessage("Periksa error di form."); return; }
     setActionStatus("saving-draft"); setMessage("");
     try {
-      const supabase = createClient() as any;
+      const supabase = createClient();
       const { error } = await supabase.from("photos").update({
         caption_id: captionId.trim() || null, caption_en: captionEn.trim() || null,
         tags_id: stringToTags(tagsIdInput), tags_en: stringToTags(tagsEnInput),
         microstock_url: microstockUrl.trim() || null, status: "draft"
-      }).eq("id", photo.id);
+      }).eq("id", photo.id).eq("user_id", photo.user_id!).select("id").single();
       if (error) throw error;
       setCurrentStatus("draft"); setActionStatus("success"); setMessage("Draf berhasil disimpan.");
     } catch (err) {
@@ -67,8 +66,7 @@ export default function EditPhotoForm({ photo }: EditPhotoFormProps) {
   async function handlePublish() {
     const isCaptionValid = validateCommon();
     const errors: { captionId?: string; microstockUrl?: string } = {};
-    if (microstockUrl.trim().length === 0) errors.microstockUrl = "URL Eksternal (wajib diisi untuk publikasi).";
-    else if (!URL_REGEX.test(microstockUrl.trim())) errors.microstockUrl = "Format URL tidak valid (http/https).";
+    if (microstockUrl.trim() && !URL_REGEX.test(microstockUrl.trim())) errors.microstockUrl = "Format URL tidak valid (http/https).";
 
     if (Object.keys(errors).length > 0 || !isCaptionValid) {
       setFieldErrors(prev => ({ ...prev, ...errors }));
@@ -77,12 +75,12 @@ export default function EditPhotoForm({ photo }: EditPhotoFormProps) {
 
     setActionStatus("publishing"); setMessage("");
     try {
-      const supabase = createClient() as any;
+      const supabase = createClient();
       const { error } = await supabase.from("photos").update({
         caption_id: captionId.trim() || null, caption_en: captionEn.trim() || null,
         tags_id: stringToTags(tagsIdInput), tags_en: stringToTags(tagsEnInput),
-        microstock_url: microstockUrl.trim(), status: "published",
-      }).eq("id", photo.id);
+        microstock_url: microstockUrl.trim() || null, status: "published",
+      }).eq("id", photo.id).eq("user_id", photo.user_id!).select("id").single();
       if (error) throw error;
       setCurrentStatus("published"); setActionStatus("success"); setMessage("Foto dipublikasikan!");
     } catch (err) {
@@ -94,13 +92,9 @@ export default function EditPhotoForm({ photo }: EditPhotoFormProps) {
     if (!window.confirm("Hapus foto secara permanen?")) return;
     setActionStatus("deleting"); setMessage("");
     try {
-      const supabase = createClient() as any;
-      if (photo.thumbnail_url) {
-        const path = extractStoragePath(photo.thumbnail_url, "thumbnails");
-        if (path) await supabase.storage.from("thumbnails").remove([path]);
-      }
-      const { error } = await supabase.from("photos").delete().eq("id", photo.id);
-      if (error) throw error;
+      const response = await fetch(`/api/photos/${photo.id}`, { method: "DELETE" });
+      const result = await response.json();
+      if (!response.ok || !result.success) throw new Error(result.error || "Gagal menghapus foto.");
       router.push("/dashboard"); router.refresh();
     } catch (err) {
       setActionStatus("error"); setMessage(err instanceof Error ? err.message : "Gagal menghapus.");
@@ -158,7 +152,8 @@ export default function EditPhotoForm({ photo }: EditPhotoFormProps) {
         </div>
 
         <div className="form-control border-t-4 border-[#111111] pt-8">
-          <label className="label" htmlFor="microstock_url"><span className={labelClass}>URL Eksternal (Wajib untuk Publikasi)</span></label>
+          <label className="label" htmlFor="microstock_url"><span className={labelClass}>URL Eksternal (Opsional)</span></label>
+          <p className="font-bold mb-3">Kosongkan agar foto dapat diunduh gratis.</p>
           <input id="microstock_url" type="url" value={microstockUrl} onChange={(e) => { setMicrostockUrl(e.target.value); setActionStatus("idle"); }} className={`${inputClass} ${fieldErrors.microstockUrl ? "border-[#882255] bg-red-50" : ""}`} placeholder="https://..." disabled={isBusy} />
           {fieldErrors.microstockUrl && <label className="label mt-1"><span className="label-text-alt text-[#882255] font-bold text-base px-2 py-1 bg-white border-2 border-[#882255]">{fieldErrors.microstockUrl}</span></label>}
         </div>

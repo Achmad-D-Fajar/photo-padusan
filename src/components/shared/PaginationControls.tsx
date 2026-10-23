@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, clampPage, computeTotalPages } from "@/lib/pagination";
 
@@ -10,7 +10,11 @@ interface PaginationControlsProps {
   totalCount: number;
 }
 
-export default function PaginationControls({ page, pageSize, totalCount }: PaginationControlsProps) {
+export default function PaginationControls(props: PaginationControlsProps) {
+  return <PaginationControlsContent key={`${props.page}:${props.pageSize}`} {...props} />;
+}
+
+function PaginationControlsContent({ page, pageSize, totalCount }: PaginationControlsProps) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -18,9 +22,6 @@ export default function PaginationControls({ page, pageSize, totalCount }: Pagin
 
   const [pageInput, setPageInput] = useState(String(page));
   const [pageSizeInput, setPageSizeInput] = useState(String(pageSize));
-
-  useEffect(() => { setPageInput(String(page)); }, [page]);
-  useEffect(() => { setPageSizeInput(String(pageSize)); }, [pageSize]);
 
   function navigateTo(rawPage: number, rawPageSize: number) {
     const params = new URLSearchParams(searchParams.toString());

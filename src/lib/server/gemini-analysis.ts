@@ -80,7 +80,7 @@ export function parseGeminiBilingualResponse(rawText: string): GeminiBilingualRe
     const fromAI: string[] = Array.isArray(raw)
       ? raw
           .filter((t): t is string => typeof t === "string")
-          .map(t => t.trim())
+          .map(t => t.trim().slice(0, 64))
           .filter(Boolean)
       : [];
     // Required location tags take precedence; AI tags fill the rest.
@@ -90,11 +90,11 @@ export function parseGeminiBilingualResponse(rawText: string): GeminiBilingualRe
   return {
     caption_en:
       typeof parsed.caption_en === "string" && parsed.caption_en.trim()
-        ? parsed.caption_en.trim()
+        ? parsed.caption_en.trim().slice(0, 300)
         : "A photograph from Padusan Village, Mojokerto.",
     caption_id:
       typeof parsed.caption_id === "string" && parsed.caption_id.trim()
-        ? parsed.caption_id.trim()
+        ? parsed.caption_id.trim().slice(0, 300)
         : "Foto dari Desa Padusan, Mojokerto.",
     tags_en: extractTags(parsed.tags_en, REQUIRED_TAGS_EN),
     tags_id: extractTags(parsed.tags_id, REQUIRED_TAGS_ID),

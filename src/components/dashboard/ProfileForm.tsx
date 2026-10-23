@@ -89,9 +89,7 @@ export default function ProfileForm({ userId, initialProfile }: ProfileFormProps
         uploadedAvatarUrl = publicUrl;
       }
 
-      // Menyisipkan 'as any' untuk menghindari error type never,
-      // serta memasukkan microstock_url ke payload update.
-      const { error: updateError } = await (supabase.from("profiles") as any)
+      const { error: updateError } = await supabase.from("profiles")
         .update({
           display_name: formData.display_name,
           full_name: formData.full_name,
@@ -108,8 +106,10 @@ export default function ProfileForm({ userId, initialProfile }: ProfileFormProps
       setMessage({ type: "success", text: "Profil berhasil diperbarui!" });
       setAvatarFile(null); 
       router.refresh(); 
-    } catch (error: any) {
-      setMessage({ type: "error", text: error.message || "Terjadi kesalahan saat menyimpan profil." });
+    } catch (error) {
+      const text = error && typeof error === "object" && "message" in error && typeof error.message === "string"
+        ? error.message : "Terjadi kesalahan saat menyimpan profil.";
+      setMessage({ type: "error", text });
     } finally {
       setIsSubmitting(false);
     }

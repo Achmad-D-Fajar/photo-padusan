@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import type { Database } from "@/types/supabase";
 
 // Dipakai di Server Components / Route Handlers untuk membaca sesi user
 // yang sedang login (anon key, tunduk pada RLS).
@@ -15,7 +16,7 @@ export async function createClient() {
 
   const cookieStore = await cookies();
 
-  return createServerClient(supabaseUrl, supabaseAnonKey, {
+  return createServerClient<Database>(supabaseUrl, supabaseAnonKey, {
     cookies: {
       getAll() {
         return cookieStore.getAll();
