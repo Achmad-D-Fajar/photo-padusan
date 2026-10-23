@@ -81,6 +81,12 @@ npm run build
   Sharp alone cannot decode HEVC with the bundled binaries.
 - Keep image routes on the Node.js runtime. Preserve `sharp` and `heic-decode`
   in `next.config.ts` server external packages.
+- Keep Next.js and the app on a single Sharp version using the `next.sharp`
+  override in `package.json`. Check `npm ls sharp` after dependency updates;
+  mixed Sharp/native binary versions can prevent Vercel image functions from starting.
+- Preserve the image routes' `outputFileTracingIncludes` in `next.config.ts`:
+  deployed functions need Sharp's native binary and libvips shared libraries,
+  including the Linux files in `@img/sharp-libvips-linux-x64`.
 - Apply orientation before calculating preview/watermark dimensions. Use actual
   resized dimensions and scale the watermark to fit tiny images and panoramas.
 - Preserve original bytes and format for downloads; previews/thumbnails may be

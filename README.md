@@ -125,6 +125,13 @@ limit request bodies to 4.5 MB. Processing routes accept JSON references to the
 authenticated user's staged file, check its stored size, and validate image
 content before creating permanent files. Photos are limited to 80 megapixels.
 HEIC/HEIF uses `heic-decode` because Sharp's prebuilt binaries lack HEVC decoding.
+The npm override in `package.json` keeps Next.js and the app on the same Sharp
+version. Preserve it during dependency updates and check `npm ls sharp` to avoid
+shipping conflicting native image binaries in Vercel functions.
+`next.config.ts` explicitly includes Sharp's native runtime packages in the
+preview, analysis, and draft functions. If a deployment reports a missing
+`libvips-cpp.so` library, install optional dependencies (`npm ci --include=optional`)
+and redeploy with the existing Build Cache disabled.
 
 Abandoned uploads are private and are deleted after 24 hours by the daily cron
 in `vercel.json`. Set `CRON_SECRET` in Vercel. For other hosts, schedule an

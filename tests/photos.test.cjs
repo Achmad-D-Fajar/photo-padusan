@@ -5,6 +5,38 @@ const userId = "11111111-1111-4111-8111-111111111111";
 const uploadPath = `${userId}/22222222-2222-4222-8222-222222222222.heic`;
 const request = body => new Request("http://localhost/api/photos/draft", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
 
+for (const authenticated of [false, true]) {
+  test(`preview ${authenticated ? "returns JSON and cleans staging when libvips is missing" : "authenticates before loading native image libraries"}`, async t => {
+    let loads = 0;
+    let cleaned = false;
+    const logged = [];
+    t.mock.method(console, "error", (...args) => logged.push(args));
+    const supabase = {
+      auth: { getUser: async () => ({ data: { user: authenticated ? { id: userId } : null }, error: null }) },
+      storage: { from: () => ({
+        info: async () => ({ data: { size: 10 }, error: null }),
+        download: async () => ({ data: new Blob(["jpeg bytes"]), error: null }),
+        remove: async () => { cleaned = true; return { error: null }; },
+      }) },
+    };
+    const stubs = { "@/lib/supabase/server": { createClient: async () => supabase } };
+    Object.defineProperty(stubs, "sharp", { get() {
+      loads++;
+      throw new Error("ERR_DLOPEN_FAILED: libvips-cpp.so.8.18.3: cannot open shared object file");
+    } });
+    const route = loadTs("src/app/api/photos/preview/route.ts", stubs);
+    const response = await route.POST(request({ path: uploadPath }));
+    assert.equal(response.status, authenticated ? 503 : 401);
+    assert.match(response.headers.get("content-type"), /application\/json/);
+    const result = await response.json();
+    assert.equal(result.success, false);
+    assert.match(result.error, authenticated ? /Pemroses gambar belum tersedia/ : /login kembali/);
+    assert.equal(loads, authenticated ? 1 : 0);
+    assert.equal(cleaned, authenticated);
+    if (authenticated) assert.equal(logged[0][0], "[photo-image:load]");
+  });
+}
+
 function draftHarness(failure) {
   const calls = [];
   const supabase = {

@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { MAX_PHOTO_SIZE_MB, PHOTO_ACCEPT, PHOTO_UPLOAD_BUCKET, validatePhotoFile } from "@/lib/photo-upload";
+import { readPhotoApiData, readPhotoPreview, storageUploadError } from "@/lib/photo-api";
+import type { GeminiBilingualResult } from "@/lib/server/gemini-analysis";
 
 const MAX_CONTEXT_LEN = 300;
 
@@ -52,15 +54,16 @@ export default function UploadForm() {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name: file.name, type: file.type, size: file.size }),
     });
-    const result = await response.json();
-    if (!response.ok || !result.success) throw new Error(result.error || "Gagal menyiapkan unggahan.");
-    const { path, token, contentType } = result.data;
+    const { path, token, contentType } = await readPhotoApiData<{ path: string; token: string; contentType: string }>(response, "Gagal menyiapkan unggahan.");
     try {
       const supabase = createClient();
-      const { error } = await supabase.storage.from(PHOTO_UPLOAD_BUCKET).uploadToSignedUrl(path, token, file, { contentType });
-      if (error) throw new Error(error.message);
+      // storage-js uses a File's MIME type in multipart uploads, ignoring the
+      // contentType option. Normalize it for HEIC or JPEG files with empty MIME.
+      const upload = new Blob([file], { type: contentType });
+      const { error } = await supabase.storage.from(PHOTO_UPLOAD_BUCKET).uploadToSignedUrl(path, token, upload, { contentType });
+      if (error) throw error;
       return path;
-    } catch (error) { await discardUpload(path); throw error; }
+    } catch (error) { await discardUpload(path); throw storageUploadError(error); }
   }
 
   async function ensureUpload(): Promise<string> {
@@ -86,11 +89,7 @@ export default function UploadForm() {
       const response = await fetch("/api/photos/preview", {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path }),
       });
-      if (!response.ok) {
-        const result = await response.json();
-        throw new Error(result.error || "Gagal membaca gambar.");
-      }
-      setPreviewUrl(URL.createObjectURL(await response.blob()));
+      setPreviewUrl(URL.createObjectURL(await readPhotoPreview(response)));
       setOriginalFile(file); setOriginalSize(file.size);
     } catch (error) {
       if (uploadPathRef.current) void discardUpload(uploadPathRef.current);
@@ -108,8 +107,7 @@ export default function UploadForm() {
     const path = await ensureUpload();
     try {
       const res = await fetch("/api/photos/draft", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...data, path }) });
-      const result = await res.json();
-      if (!res.ok || !result.success) throw new Error(result.error || "Gagal menyimpan.");
+      await readPhotoApiData(res, "Gagal menyimpan foto.");
       uploadPathRef.current = null;
     } catch (error) {
       void discardUpload(path);
@@ -130,9 +128,8 @@ export default function UploadForm() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ caption_id: manualCaption, tags_id: parsedTagsId }),
       });
-      const transData = await transRes.json();
-      if (!transRes.ok || !transData.success) throw new Error(transData.error || "Gagal menerjemahkan teks. Coba lagi.");
-      const fd = buildBaseFormData(transData.data.caption_en, manualCaption, transData.data.tags_en, parsedTagsId);
+      const transData = await readPhotoApiData<{ caption_en: string; tags_en: string[] }>(transRes, "Gagal menerjemahkan teks.");
+      const fd = buildBaseFormData(transData.caption_en, manualCaption, transData.tags_en, parsedTagsId);
       await postToDraftRoute(fd);
       router.push("/dashboard"); router.refresh();
     } catch (err) {
@@ -147,10 +144,7 @@ export default function UploadForm() {
     try {
       const path = await ensureUpload();
       const res = await fetch("/api/photos/analyze", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path, description: aiContext.trim() }) });
-      const result = await res.json();
-      if (!res.ok || !result.success) throw new Error(result.error || "Analisis gagal.");
-
-      const data = result.data; 
+      const data = await readPhotoApiData<GeminiBilingualResult>(res, "Analisis gambar gagal.");
       setEditableAnalysis({ captionEn: data.caption_en, captionId: data.caption_id, tagsEnInput: tagsToInput(data.tags_en), tagsIdInput: tagsToInput(data.tags_id) });
       setPhase("review");
     } catch (err) {
@@ -195,7 +189,7 @@ export default function UploadForm() {
         <div className="card-body gap-8 p-0">
           <div className="form-control">
             <label className="label items-start p-0 mb-2" htmlFor="file-input">
-              <span className={labelClass}>Pilih gambar (maks. {MAX_PHOTO_SIZE_MB} MB, termasuk HEIC)</span>
+              <span className={labelClass}>Pilih gambar (maks. {MAX_PHOTO_SIZE_MB} MB)</span>
             </label>
             <input id="file-input" ref={fileInputRef} type="file" accept={PHOTO_ACCEPT} onChange={handleFileChange} className={inputClass} disabled={isBusy} />
             {phase === "preparing" && <p role="status" className="font-bold mt-4">Menyiapkan gambar dan pratinjau…</p>}

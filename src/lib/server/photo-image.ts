@@ -1,4 +1,4 @@
-import sharp, { type Sharp } from "sharp";
+import type { Sharp } from "sharp";
 import { MAX_IMAGE_PIXELS, MAX_PHOTO_SIZE } from "@/lib/photo-upload";
 import { ApiError } from "./api-error";
 
@@ -12,6 +12,15 @@ export function isHeicBuffer(buffer: Buffer): boolean {
 export async function openPhotoImage(buffer: Buffer): Promise<Sharp> {
   if (buffer.length === 0 || buffer.length > MAX_PHOTO_SIZE) {
     throw new ApiError(413, "Ukuran file harus antara 1 byte dan 50 MB.");
+  }
+  // Load inside the request's error boundary. A missing native library must
+  // produce a JSON service error rather than prevent the route from starting.
+  let sharp: typeof import("sharp").default;
+  try {
+    ({ default: sharp } = await import("sharp"));
+  } catch (error) {
+    console.error("[photo-image:load]", error);
+    throw new ApiError(503, "Pemroses gambar belum tersedia. Silakan coba lagi nanti.");
   }
   try {
     if (isHeicBuffer(buffer)) {

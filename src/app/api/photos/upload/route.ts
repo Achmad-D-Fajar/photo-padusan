@@ -13,7 +13,10 @@ export async function POST(request: NextRequest) {
     const extension = photoExtension(file.name, file.type)!;
     const path = `${user.id}/${crypto.randomUUID()}.${extension}`;
     const { data, error: signingError } = await supabase.storage.from(PHOTO_UPLOAD_BUCKET).createSignedUploadUrl(path);
-    if (signingError || !data) throw new ApiError(502, "Gagal menyiapkan unggahan.");
+    if (signingError || !data) {
+      console.error("[photo-upload:sign]", signingError?.message ?? "Missing signed upload data");
+      throw new ApiError(502, "Gagal menyiapkan unggahan. Penyimpanan belum tersedia.");
+    }
     return NextResponse.json({ success: true, data: { path, token: data.token, contentType: PHOTO_MIME_TYPES[extension] } });
   } catch (error) { return apiErrorResponse(error); }
 }
