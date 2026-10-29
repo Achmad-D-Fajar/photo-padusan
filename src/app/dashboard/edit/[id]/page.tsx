@@ -1,6 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import EditPhotoForm from "@/components/dashboard/EditPhotoForm";
+import { attachLicenseHistory } from "@/lib/queries/photo-license-history";
 
 interface EditPhotoPageProps {
   params: Promise<{ id: string }>;
@@ -32,7 +33,7 @@ export default async function EditPhotoPage({ params }: EditPhotoPageProps) {
         </p>
       </div>
 
-      <EditPhotoForm photo={photo} />
+      <EditPhotoForm photo={(await attachLicenseHistory(supabase, [photo]))[0]} />
     </main>
   );
 }

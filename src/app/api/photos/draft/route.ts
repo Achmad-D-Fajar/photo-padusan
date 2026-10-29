@@ -6,6 +6,7 @@ import { ApiError, apiErrorResponse, readJson } from "@/lib/server/api-error";
 import { PHOTO_UPLOAD_BUCKET, isOwnedUploadPath } from "@/lib/photo-upload";
 import { captionToSlug } from "@/lib/slug";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { photoPageUrl } from "@/lib/legal-documents";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -43,7 +44,7 @@ export async function POST(request: NextRequest) {
       const finalBuffer = embedMetadata(watermarkedBuffer, {
         caption: `${captionEn} | ${captionId}`,
         tags: [...new Set([...tagsEn, ...tagsId])].slice(0, 30), artist,
-        copyright: `© ${new Date().getUTCFullYear()} ${artist} / Padustock. All rights reserved.`, software: "Padustock",
+        copyright: `© ${new Date().getUTCFullYear()} ${artist}`, software: "Padustock", photoPageUrl: photoPageUrl(photoId),
       });
       const thumbPath = `${user.id}/${captionToSlug(captionEn || captionId, photoId)}`;
       thumbnailPath = thumbPath;

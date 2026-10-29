@@ -46,6 +46,10 @@ npm run build
 - Add regression coverage for changed failure paths and security behavior.
   Documentation-only changes need a content/link review and `git diff --check`.
 - Report actual verification results and any checks that could not run.
+- Licensing database tests execute the real migration in local PGlite with explicit
+  test-only Supabase roles/view fixtures. Distinguish these from mocked API checks
+  and actual hosted-project enforcement. Run `npm run test:ui` for legal/form changes;
+  its Supabase fixtures must stay local and independent of deployed services.
 
 ## Authentication, privacy, and database access
 
@@ -94,6 +98,21 @@ npm run build
   then redirect to a short-lived signed Storage URL.
 - A published photo can be free: an empty `microstock_url` is valid. Read its
   publication status from `status`, not from the presence of a purchase URL.
+- Use the shared licensing helper and notices: current free/external availability
+  is separate from historical CC exposure. Unknown history is not proof of no grant.
+  Never label every external listing CC or assume identical provider permissions.
+- Preserve database-controlled `photo_license_history`, including minimal records
+  after photo deletion. Do not rewrite `vw_public_photos` without its real definition
+  and security settings. Never clear history from owner forms or backdate grants.
+- Keep licensing rollout conservative until authorized post-deployment activation.
+  The activation SQL is separate from schema migration application.
+- Registration requires the current legal-document versions and strict boolean
+  acceptance before account creation. Store acknowledgment only in admin-controlled
+  application metadata with a server timestamp; no invented legacy consent or IP tracking.
+- Keep document versions/dates in the shared manifest. Prepared local revisions
+  have no publication date; set the actual date when releasing. New preview metadata
+  uses photographer attribution and a canonical photo reference, not a blanket grant
+  or reservation. Do not rewrite originals or existing embedded metadata.
 - Clean up staged and attempted permanent objects after failed saves. Owner
   deletion must remove both originals and thumbnails and check Storage errors
   before reporting success or removing the database row.

@@ -1,6 +1,18 @@
 export type Database = {
   public: {
     Tables: {
+      photo_license_history: {
+        Row: { photo_id: string; legacy_cc_possible: boolean; first_free_published_at: string | null };
+        Insert: never;
+        Update: never;
+        Relationships: [];
+      };
+      photo_licensing_policy: {
+        Row: { singleton: boolean; corrected_policy_active: boolean };
+        Insert: never;
+        Update: never;
+        Relationships: [];
+      };
       profiles: {
         Row: {
           id: string;

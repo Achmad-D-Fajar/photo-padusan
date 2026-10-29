@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/supabase"; 
 import { escapeIlikePattern } from "@/lib/supabase/ilike";
+import type { PhotoLicenseHistory } from "@/lib/photo-licensing";
 
 export type SearchScope = "caption" | "uploader" | "tags";
 export type SortBy = "created_at" | "caption_id" | "caption_en"; // Diperbarui untuk kolom bilingual
@@ -183,7 +184,7 @@ export function buildMyPhotosQuery(
 }
 
 // Bypassing Supabase's automatic string inference to guarantee 100% type safety
-export type PublicPhotoItem = Database["public"]["Views"]["vw_public_photos"]["Row"];
+export type PublicPhotoItem = Database["public"]["Views"]["vw_public_photos"]["Row"] & { license_history?: PhotoLicenseHistory | null };
 
 export type MyPhotoItem = Pick<
   Database["public"]["Tables"]["photos"]["Row"],

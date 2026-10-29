@@ -4,6 +4,10 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import ProtectedImage from "@/components/shared/ProtectedImage";
 import { serializeJsonLd } from "@/lib/json-ld";
+import { attachLicenseHistory } from "@/lib/queries/photo-license-history";
+import { photoLicenseJsonLd } from "@/lib/photo-licensing";
+import { PhotoLicenseAction } from "@/components/shared/PhotoLicense";
+import { photoPageUrl as canonicalPhotoUrl } from "@/lib/legal-documents";
 
 interface PhotoPageProps {
   params: Promise<{ id: string }>;
@@ -11,7 +15,6 @@ interface PhotoPageProps {
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") ?? "https://padustock.vercel.app"; 
-const LICENSE_URL = "https://creativecommons.org/licenses/by-nc-nd/4.0/";
 
 async function getPhoto(id: string) {
   const supabase = await createClient();
@@ -22,7 +25,7 @@ async function getPhoto(id: string) {
     .single();
 
   if (error || !photo) return null;
-  return photo;
+  return (await attachLicenseHistory(supabase, [photo]))[0];
 }
 
 export async function generateMetadata({ params }: PhotoPageProps): Promise<Metadata> {
@@ -67,17 +70,18 @@ export default async function PhotoPage({ params }: PhotoPageProps) {
 
   const photographerName   = photo.full_name || `@${photo.display_name}`;
   const photographerPageUrl = `${SITE_URL}/photographer/${photo.display_name}`;
-  const photoPageUrl        = `${SITE_URL}/photo/${photo.id}`;
+  const photoPageUrl        = canonicalPhotoUrl(photo.id);
   const uploadDateIso       = new Date(photo.created_at).toISOString().split("T")[0];
 
   const combinedTags = [...new Set([...(photo.tags_id ?? []), ...(photo.tags_en ?? [])])];
+  const { description: historyDescription, ...licensingJsonLd } = photoLicenseJsonLd(photo, photoPageUrl);
 
   const jsonLd = {
     "@context": "https://schema.org",
     "@type": "ImageObject",
     "@id": photoPageUrl,
     name: photo.caption_en,
-    description: photo.caption_id,
+    description: [photo.caption_id, historyDescription].filter(Boolean).join(" "),
     contentUrl: photo.thumbnail_url ?? "",
     thumbnailUrl: photo.thumbnail_url ?? "",
     keywords: combinedTags.join(", "),
@@ -85,8 +89,7 @@ export default async function PhotoPage({ params }: PhotoPageProps) {
     creator: { "@type": "Person", name: photographerName, url: photographerPageUrl },
     copyrightHolder: { "@type": "Person", name: photographerName, url: photographerPageUrl },
     copyrightYear: new Date(photo.created_at).getUTCFullYear(),
-    license: LICENSE_URL,
-    acquireLicensePage: photo.microstock_url ?? photoPageUrl,
+    ...licensingJsonLd,
     creditText: `${photographerName} / Padustock - Desa Padusan`,
     publisher: { "@type": "Organization", name: "Padustock", url: SITE_URL },
     url: photoPageUrl,
@@ -162,34 +165,7 @@ export default async function PhotoPage({ params }: PhotoPageProps) {
             )}
 
             <div className="mt-10 pt-8 border-t-4 border-[#111111]">
-              {photo.microstock_url ? (
-                <a
-                  href={photo.microstock_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="btn bg-[#332288] hover:bg-[#20155c] text-[#E5E5E5] border-4 border-[#111111] rounded-none font-bold text-xl sm:text-2xl h-auto py-4 shadow-[6px_6px_0px_#111111] hover:translate-y-[2px] hover:shadow-[4px_4px_0px_#111111] transition-all w-full uppercase"
-                >
-                  Beli Resolusi Asli
-                </a>
-              ) : (
-                <a
-                  href={`/api/photos/download/${photo.id}`}
-                  download
-                  className="btn bg-[#117733] hover:bg-[#0e5c27] text-[#E5E5E5] border-4 border-[#111111] rounded-none font-bold text-xl sm:text-2xl h-auto py-4 shadow-[6px_6px_0px_#111111] hover:translate-y-[2px] hover:shadow-[4px_4px_0px_#111111] transition-all w-full uppercase"
-                >
-                  Download Gratis (Resolusi Asli)
-                </a>
-              )}
-            </div>
-
-            <div className="bg-[#E5E5E5] border-4 border-[#111111] p-4 mt-8">
-              <p className="text-base font-bold text-[#111111] leading-relaxed">
-                INFO LISENSI:{" "}
-                <a href={LICENSE_URL} target="_blank" rel="noopener noreferrer" className="text-[#332288] underline hover:bg-[#332288] hover:text-[#E5E5E5] px-1 transition-colors">
-                  CC BY-NC-ND 4.0
-                </a>
-                . Penggunaan komersial memerlukan lisensi terpisah dari platform microstock fotografer.
-              </p>
+              <PhotoLicenseAction photo={photo} />
             </div>
           </div>
         </div>

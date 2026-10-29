@@ -6,6 +6,7 @@ import type { PublicPhotoItem } from "@/lib/queries/public-photos";
 import { LOAD_MORE_INCREMENT } from "@/lib/pagination";
 import ProtectedImage from "@/components/shared/ProtectedImage";
 import { usePreventSave } from "@/hooks/usePreventSave";
+import { licensePresentation } from "@/lib/photo-licensing";
 
 interface LoadMoreResult { items: PublicPhotoItem[]; error: string | null; }
 interface PhotoGridProps {
@@ -65,6 +66,7 @@ export default function PhotoGrid({ photos, totalCount, initialOffset, isFilteri
         {items.map((photo) => {
           const photographerLabel = getPhotographerLabel(photo);
           const photographerHref = getPhotographerHref(photo);
+          const license = licensePresentation(photo);
 
           return (
             <div key={photo.id} className="card bg-white border-4 border-[#111111] shadow-[8px_8px_0px_#111111] rounded-none hover:-translate-y-1 hover:shadow-[12px_12px_0px_#111111] transition-all flex flex-col group">
@@ -75,14 +77,15 @@ export default function PhotoGrid({ photos, totalCount, initialOffset, isFilteri
                   ) : (
                     <div className="w-full h-full flex items-center justify-center font-bold text-[#111111]">No Image</div>
                   )}
-                  {photo.microstock_url === null && (
+                  {license.kind === "free" && (
                     <span className="absolute bottom-3 left-3 bg-[#117733] text-[#E5E5E5] border-2 border-[#111111] font-bold text-xs uppercase px-3 py-2 shadow-[2px_2px_0px_#111111]">
-                      UNDUH GRATIS
+                      GRATIS · CC BY-NC-ND 4.0
                     </span>
                   )}
                 </figure>
               </Link>
               <div className="card-body p-5 gap-3 flex flex-col justify-between flex-1">
+                {license.kind === "external" && <p className="text-sm font-bold">Lisensi melalui penyedia{license.historyNotice ? " · Lihat riwayat CC pada detail foto" : ""}</p>}
                 <Link href={`/photo/${photo.id}`} scroll={false} className="font-bold text-lg leading-snug line-clamp-2 text-[#111111] hover:text-[#332288] hover:underline focus:outline-none focus:ring-2 focus:ring-[#44AA99]">
                   {photo.caption_id ?? photo.caption_en ?? "Tanpa caption"}
                 </Link>

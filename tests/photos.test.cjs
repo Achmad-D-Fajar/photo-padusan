@@ -62,7 +62,7 @@ function draftHarness(failure) {
       if (failure === "decode") throw new Error("Decode failed");
       return { watermarkedBuffer: Buffer.from("jpeg") };
     } },
-    "@/lib/server/exif-writer": { embedMetadata: bytes => bytes },
+    "@/lib/server/exif-writer": { embedMetadata: (bytes, metadata) => { calls.push(["metadata", metadata]); return bytes; } },
   });
   return { calls, post: path => route.POST(request({ path, caption_en: "Field", caption_id: "Sawah", tags_en: [], tags_id: [], publish_directly: true })) };
 }
@@ -107,6 +107,9 @@ test("successful publication retains the HEIC extension and free download state"
   assert.equal(photo.status, "published");
   assert.equal(photo.microstock_url, null);
   assert.match(photo.image_url, /\.heic$/);
+  const metadata = calls.find(([name]) => name === "metadata")[1];
+  assert.ok(metadata.photoPageUrl.endsWith(`/photo/${photo.id}`));
+  assert.ok(!/All rights reserved|CC BY|creativecommons/.test(metadata.copyright));
   assert.ok(!calls.some(([name]) => name === "remove"));
 });
 
@@ -147,7 +150,7 @@ test("editing a published free photo preserves its public status and null purcha
   const component = loadTs("src/components/dashboard/EditPhotoForm.tsx", {
     react: { useState: initial => [initial, () => {}] },
     "next/navigation": { useRouter: () => ({ push() {}, refresh() {} }) },
-    "@/lib/supabase/client": { createClient: () => ({ from: () => ({ update: data => {
+    "@/lib/supabase/client": { createClient: () => ({ from: table => table === "photo_license_history" ? ({ select() { return this; }, in: async () => ({ data: [], error: null }) }) : ({ update: data => {
       payload = data;
       return { eq() { return this; }, select() { return this; }, single: async () => ({ data: { id: "photo" }, error: null }) };
     } }) }) },

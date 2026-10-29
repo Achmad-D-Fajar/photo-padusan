@@ -9,7 +9,8 @@ export interface EmbedMetadataParams {
   caption: string;
   tags: string[];
   artist: string;       // photographer full_name || display_name
-  copyright: string;    // e.g. "© 2025 Etalase Padusan. All rights reserved."
+  copyright: string;    // Neutral attribution, not a licensing grant.
+  photoPageUrl: string;
   software?: string;
   dateTime?: string;    // EXIF DateTime format: "YYYY:MM:DD HH:MM:SS"
 }
@@ -45,7 +46,7 @@ function injectExif(jpegBuffer: Buffer, params: EmbedMetadataParams): Buffer {
   const exifObj: piexif.ExifObj = {
     "0th": {
       [piexif.ImageIFD.ImageDescription]: utf8AsBinaryString(
-        params.caption.slice(0, 255)
+        `${params.photoPageUrl}\n${params.caption}`.slice(0, 255)
       ),
       [piexif.ImageIFD.Artist]: utf8AsBinaryString(params.artist.slice(0, 255)),
       [piexif.ImageIFD.Copyright]: utf8AsBinaryString(
@@ -122,7 +123,7 @@ function buildIptcRecords(params: EmbedMetadataParams): Buffer {
   records.push(makeIptcRecord(0x05, safeUtf8(params.caption, 64)));
 
   // Dataset 0x78 — Caption / Abstract (max 2000 bytes)
-  records.push(makeIptcRecord(0x78, safeUtf8(params.caption, 2000)));
+  records.push(makeIptcRecord(0x78, safeUtf8(`${params.photoPageUrl}\n${params.caption}`, 2000)));
 
   // Dataset 0x19 — Keywords (one record per keyword, max 64 bytes each)
   // Up to 30 keywords; stock photo sites (Shutterstock, Getty, Adobe)

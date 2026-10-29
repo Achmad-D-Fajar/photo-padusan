@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { extractStoragePath } from "@/lib/storage";
 import { ApiError, apiErrorResponse } from "@/lib/server/api-error";
+import { externalLicenseLink } from "@/lib/photo-licensing";
 
 export const runtime = "nodejs";
 
@@ -17,10 +18,11 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
     const { data: photo, error } = await supabase.from("vw_public_photos")
       .select("id, user_id, caption_id, caption_en, microstock_url").eq("id", id).single();
     if (error || !photo) throw new ApiError(404, "Foto tidak ditemukan.");
-    if (photo.microstock_url) throw new ApiError(403, "Foto ini tersedia melalui tautan eksternal.");
+    if (externalLicenseLink(photo.microstock_url)) throw new ApiError(403, "Foto ini tersedia melalui tautan eksternal.");
     const admin = createAdminClient();
-    const { data: source } = await admin.from("photos").select("image_url, thumbnail_url")
+    const { data: source } = await admin.from("photos").select("image_url, thumbnail_url, microstock_url")
       .eq("id", id).eq("user_id", photo.user_id!).eq("status", "published").single();
+    if (source && externalLicenseLink(source.microstock_url)) throw new ApiError(403, "Foto ini tersedia melalui tautan eksternal.");
     const bucket = source?.image_url ? "originals" : "thumbnails";
     const url = source?.image_url || source?.thumbnail_url;
     const path = url ? extractStoragePath(url, bucket) : null;

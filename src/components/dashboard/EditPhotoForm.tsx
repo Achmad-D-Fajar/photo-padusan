@@ -4,10 +4,13 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import type { Database } from "@/types/supabase";
+import { LicenseHistoryNotice, OwnerLicenseGuidance } from "@/components/shared/PhotoLicense";
+import type { PhotoLicenseHistory } from "@/lib/photo-licensing";
+import { attachLicenseHistory } from "@/lib/queries/photo-license-history";
 
 type PhotoRow = Database["public"]["Tables"]["photos"]["Row"];
 interface EditPhotoFormProps {
-  photo: Pick<PhotoRow, "id" | "user_id" | "thumbnail_url" | "caption_en" | "caption_id" | "tags_en" | "tags_id" | "created_at" | "microstock_url" | "status">;
+  photo: Pick<PhotoRow, "id" | "user_id" | "thumbnail_url" | "caption_en" | "caption_id" | "tags_en" | "tags_id" | "created_at" | "microstock_url" | "status"> & { license_history?: PhotoLicenseHistory | null };
 }
 type ActionStatus = "idle" | "saving-draft" | "publishing" | "deleting" | "error" | "success";
 
@@ -28,6 +31,7 @@ export default function EditPhotoForm({ photo }: EditPhotoFormProps) {
   const [currentStatus, setCurrentStatus] = useState(photo.status);
   const [actionStatus, setActionStatus] = useState<ActionStatus>("idle");
   const [message, setMessage] = useState("");
+  const [licenseHistory, setLicenseHistory] = useState(photo.license_history);
   const [fieldErrors, setFieldErrors] = useState<{ captionId?: string; captionEn?: string; microstockUrl?: string }>({});
 
   const isBusy = actionStatus === "saving-draft" || actionStatus === "publishing" || actionStatus === "deleting";
@@ -82,6 +86,7 @@ export default function EditPhotoForm({ photo }: EditPhotoFormProps) {
         microstock_url: microstockUrl.trim() || null, status: "published",
       }).eq("id", photo.id).eq("user_id", photo.user_id!).select("id").single();
       if (error) throw error;
+      setLicenseHistory((await attachLicenseHistory(supabase, [photo]))[0].license_history);
       setCurrentStatus("published"); setActionStatus("success"); setMessage("Foto dipublikasikan!");
     } catch (err) {
       setActionStatus("error"); setMessage(err instanceof Error ? err.message : "Gagal mempublikasikan.");
@@ -153,7 +158,8 @@ export default function EditPhotoForm({ photo }: EditPhotoFormProps) {
 
         <div className="form-control border-t-4 border-[#111111] pt-8">
           <label className="label" htmlFor="microstock_url"><span className={labelClass}>URL Eksternal (Opsional)</span></label>
-          <p className="font-bold mb-3">Kosongkan agar foto dapat diunduh gratis.</p>
+          <OwnerLicenseGuidance external={Boolean(microstockUrl.trim())} />
+          <LicenseHistoryNotice photo={{ ...photo, license_history: licenseHistory }} />
           <input id="microstock_url" type="url" value={microstockUrl} onChange={(e) => { setMicrostockUrl(e.target.value); setActionStatus("idle"); }} className={`${inputClass} ${fieldErrors.microstockUrl ? "border-[#882255] bg-red-50" : ""}`} placeholder="https://..." disabled={isBusy} />
           {fieldErrors.microstockUrl && <label className="label mt-1"><span className="label-text-alt text-[#882255] font-bold text-base px-2 py-1 bg-white border-2 border-[#882255]">{fieldErrors.microstockUrl}</span></label>}
         </div>

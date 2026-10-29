@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import Link from "next/link";
+import { CC_LICENSE_URL, LEGAL_DOCUMENTS } from "@/lib/legal-documents";
 
 type Status = "idle" | "loading" | "error";
 
@@ -13,17 +15,21 @@ export default function RegisterPage() {
   const [password, setPassword] = useState("");
   const [status, setStatus] = useState<Status>("idle");
   const [errorMessage, setErrorMessage] = useState("");
+  const [acceptedLegal, setAcceptedLegal] = useState(false);
 
   function handleDisplayNameChange(e: React.ChangeEvent<HTMLInputElement>) { setDisplayName(e.target.value.replace(/\s/g, "")); }
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (!acceptedLegal) { setStatus("error"); setErrorMessage("Persetujuan dokumen diperlukan untuk membuat akun."); return; }
     setStatus("loading"); setErrorMessage("");
 
     try {
       const registerResponse = await fetch("/api/auth/register", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, displayName, password }),
+        body: JSON.stringify({ email, displayName, password, legalAcknowledgment: {
+          accepted: acceptedLegal, termsVersion: LEGAL_DOCUMENTS.terms.version, privacyVersion: LEGAL_DOCUMENTS.privacy.version,
+        } }),
       });
       const registerResult = await registerResponse.json();
       if (!registerResponse.ok || !registerResult.success) throw new Error(registerResult.error || "Registrasi gagal.");
@@ -64,6 +70,14 @@ export default function RegisterPage() {
           <div className="form-control">
             <label className="label p-0" htmlFor="password"><span className={labelClass}>Password Baru</span></label>
             <input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} className={inputClass} required minLength={8} disabled={status === "loading"} />
+          </div>
+
+          <div className="space-y-3 border-t-4 border-[#111111] pt-5 text-base font-bold leading-relaxed">
+            <div className="flex items-start gap-3">
+              <input id="legal-acknowledgment" type="checkbox" required checked={acceptedLegal} onChange={e => setAcceptedLegal(e.target.checked)} disabled={status === "loading"} className="checkbox shrink-0 rounded-none border-2 border-[#111111] mt-1" aria-labelledby="legal-acknowledgment-label" />
+              <label id="legal-acknowledgment-label" htmlFor="legal-acknowledgment">Saya menyetujui <Link href={LEGAL_DOCUMENTS.terms.href} target="_blank" rel="noopener noreferrer" className="underline">Syarat & Ketentuan</Link> dan telah membaca <Link href={LEGAL_DOCUMENTS.privacy.href} target="_blank" rel="noopener noreferrer" className="underline">Kebijakan Privasi</Link>.</label>
+            </div>
+            <p>Publikasi gratis menggunakan <a className="underline" href={CC_LICENSE_URL} target="_blank" rel="noopener noreferrer">CC BY-NC-ND 4.0</a>. Foto dengan tautan pembelian mengikuti proses perolehan lisensi di penyedia eksternal.</p>
           </div>
 
           {status === "error" && (

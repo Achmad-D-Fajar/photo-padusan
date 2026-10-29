@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import { MAX_PHOTO_SIZE_MB, PHOTO_ACCEPT, PHOTO_UPLOAD_BUCKET, validatePhotoFile } from "@/lib/photo-upload";
 import { readPhotoApiData, readPhotoPreview, storageUploadError } from "@/lib/photo-api";
 import type { GeminiBilingualResult } from "@/lib/server/gemini-analysis";
+import { OwnerLicenseGuidance } from "@/components/shared/PhotoLicense";
 
 const MAX_CONTEXT_LEN = 300;
 
@@ -247,8 +248,9 @@ export default function UploadForm() {
               <span className="font-bold text-lg sm:text-xl text-[#111111] uppercase whitespace-normal break-words leading-tight">Saya akan menambahkan link Eksternal</span>
             </label>
             <p className="text-base sm:text-lg font-bold text-[#111111] mt-4 leading-snug whitespace-normal break-words">
-              {wantsMicrostockLink ? "Status: DRAF (Tidak akan muncul di publik sampai link eksternal dimasukkan di halaman Edit)." : "Status: PUBLIK (Bisa diunduh gratis oleh semua orang)."}
+              {wantsMicrostockLink ? "Akan disimpan sebagai DRAF sampai tautan ditambahkan dan foto dipublikasikan di halaman Edit." : "Akan dipublikasikan GRATIS saat Anda menyimpan."}
             </p>
+            <OwnerLicenseGuidance external={wantsMicrostockLink} />
           </div>
 
           {errorMessage && phase === "compose" && (

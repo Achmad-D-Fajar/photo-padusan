@@ -12,6 +12,7 @@ import {
 } from "@/lib/pagination";
 import SearchBar from "@/components/public/SearchBar";
 import PhotoGrid from "@/components/public/PhotoGrid";
+import { attachLicenseHistory } from "@/lib/queries/photo-license-history";
 import PaginationControls from "@/components/shared/PaginationControls";
 
 interface HomePageProps {
@@ -104,7 +105,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
     );
   }
 
-  const photoList = photos ?? [];
+  const photoList = await attachLicenseHistory(supabase, photos ?? []);
   const totalCount = count ?? 0;
   const isFiltering = keyword.length > 0 || scopes.length > 0 || startDate.length > 0 || endDate.length > 0;
 
@@ -118,7 +119,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
     if (loadMoreErrorResult) {
       return { items: [], error: loadMoreErrorResult.message };
     }
-    return { items: data ?? [], error: null };
+    return { items: await attachLicenseHistory(supabaseForAction, data ?? []), error: null };
   }
 
   return (

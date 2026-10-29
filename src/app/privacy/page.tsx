@@ -1,81 +1,32 @@
 import type { Metadata } from "next";
+import LegalDocument from "@/components/shared/LegalDocument";
+import { LEGAL_DOCUMENTS, OWNERSHIP_REPORT_URL } from "@/lib/legal-documents";
 
-export const metadata: Metadata = {
-  title: "Kebijakan Privasi | Padustock",
-  description: "Kebijakan privasi pengumpulan dan penggunaan data di Padustock.",
-};
+export const metadata: Metadata = { title: "Kebijakan Privasi | Padustock", description: "Penggunaan data akun, profil publik, foto, layanan AI, dan riwayat lisensi di Padustock." };
 
 export default function PrivacyPage() {
-  return (
-    <main className="container mx-auto px-4 py-12 max-w-4xl">
-      <div className="mb-12 border-b-8 border-[#111111] pb-8">
-        <h1 className="font-display text-5xl md:text-7xl font-bold uppercase tracking-tighter text-[#111111] mb-6">
-          Kebijakan Privasi
-        </h1>
-        <p className="text-xl font-bold text-[#111111] bg-white border-4 border-[#111111] shadow-[4px_4px_0px_#111111] p-4 inline-block uppercase tracking-wide">
-          Pembaruan Terakhir: 9 Juli 2026
-        </p>
-      </div>
-
-      <div className="bg-[#E5E5E5] border-4 border-[#111111] shadow-[12px_12px_0px_#111111] p-8 sm:p-12 space-y-10">
-        
-        <section>
-          <h2 className="font-bold text-2xl uppercase tracking-widest bg-white border-4 border-[#111111] px-4 py-2 inline-block shadow-[4px_4px_0px_#111111] mb-6">
-            1. Pengumpulan Data
-          </h2>
-          <p className="text-lg font-bold text-[#111111] leading-relaxed">
-            Ketika Anda mendaftar atau masuk menggunakan akun Google, kami mengumpulkan data profil dasar yang diberikan oleh penyedia layanan autentikasi, termasuk:
-          </p>
-          <ul className="list-disc list-inside text-lg font-bold text-[#111111] leading-relaxed mt-4 space-y-2">
-            <li>Alamat Email</li>
-            <li>Nama Lengkap / Nama Tampilan</li>
-            <li>Foto Profil (Avatar)</li>
-          </ul>
-        </section>
-
-        <section>
-          <h2 className="font-bold text-2xl uppercase tracking-widest bg-white border-4 border-[#111111] px-4 py-2 inline-block shadow-[4px_4px_0px_#111111] mb-6">
-            2. Penggunaan Data
-          </h2>
-          <p className="text-lg font-bold text-[#111111] leading-relaxed">
-            Data yang kami kumpulkan semata-mata digunakan untuk:
-          </p>
-          <ul className="list-disc list-inside text-lg font-bold text-[#111111] leading-relaxed mt-4 space-y-2 bg-[#88CCEE] border-4 border-[#111111] p-6 shadow-[6px_6px_0px_#111111]">
-            <li>Membangun profil publik Anda sebagai fotografer di platform kami.</li>
-            <li>Mengaitkan dan memberikan atribusi hak cipta pada foto yang Anda unggah.</li>
-            <li>Mengamankan akun Anda dari aktivitas yang tidak sah.</li>
-          </ul>
-        </section>
-
-        <section>
-          <h2 className="font-bold text-2xl uppercase tracking-widest bg-white border-4 border-[#111111] px-4 py-2 inline-block shadow-[4px_4px_0px_#111111] mb-6">
-            3. Pihak Ketiga & Infrastruktur
-          </h2>
-          <p className="text-lg font-bold text-[#111111] leading-relaxed mb-4">
-            Kami tidak pernah menjual data pribadi Anda. Namun, data Anda disimpan secara aman melalui layanan infrastruktur pihak ketiga:
-          </p>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="bg-white border-4 border-[#111111] p-4 shadow-[4px_4px_0px_#111111]">
-              <p className="font-bold uppercase tracking-wider text-[#332288]">Supabase</p>
-              <p className="font-bold text-sm mt-1">Sebagai penyedia autentikasi, database, dan penyimpanan file utama.</p>
-            </div>
-            <div className="bg-white border-4 border-[#111111] p-4 shadow-[4px_4px_0px_#111111]">
-              <p className="font-bold uppercase tracking-wider text-[#332288]">Google Auth</p>
-              <p className="font-bold text-sm mt-1">Sebagai protokol masuk (Single Sign-On).</p>
-            </div>
-          </div>
-        </section>
-
-        <section>
-          <h2 className="font-bold text-2xl uppercase tracking-widest bg-[#111111] text-[#E5E5E5] border-4 border-[#111111] px-4 py-2 inline-block shadow-[4px_4px_0px_#111111] mb-6">
-            4. Hak Pengguna
-          </h2>
-          <p className="text-lg font-bold text-[#111111] leading-relaxed">
-            Anda berhak mengubah informasi profil publik Anda kapan saja melalui halaman Pengaturan Dasbor. Jika Anda ingin menghapus akun beserta seluruh foto Anda dari database kami secara permanen, silakan hubungi pengelola platform.
-          </p>
-        </section>
-
-      </div>
-    </main>
-  );
+  return <LegalDocument title="Kebijakan Privasi" document={LEGAL_DOCUMENTS.privacy}>
+    <section id="akun"><h2>1. Akun dan autentikasi</h2>
+      <p>Pendaftaran menggunakan email, kata sandi, dan nama tampilan melalui Supabase Auth. Email autentikasi tidak ditampilkan sebagai email publik pada profil. Kata sandi diproses oleh layanan autentikasi; jangan mengirimkannya melalui kanal laporan. Padustock menggunakan kuki autentikasi untuk mempertahankan sesi dan mengakses dasbor. Saat ini tidak ada alur masuk dengan Google pada aplikasi ini.</p>
+      <p>Untuk pendaftaran baru, server mencatat versi Syarat & Ketentuan, versi Kebijakan Privasi, dan waktu pernyataan persetujuan dalam metadata aplikasi akun yang dikelola admin. Catatan ini bukan bagian dari profil publik dan tidak dapat diubah melalui penyuntingan profil. Akun lama tidak diberi catatan persetujuan buatan. Fitur ini tidak menambahkan pencatatan alamat IP atau pelacakan lainnya.</p>
+    </section>
+    <section id="profil"><h2>2. Informasi publik dan foto</h2>
+      <p>Nama tampilan, nama lengkap, bio, avatar, tautan portofolio, dan foto yang dipublikasikan dapat dilihat pengunjung. Nomor WhatsApp dan email publik hanya ditampilkan jika Anda mengisinya pada profil; alamat tersebut dapat berbeda dari email autentikasi. Jangan masukkan informasi yang tidak ingin Anda publikasikan.</p>
+      <p>Kami menyimpan foto asli, pratinjau bertanda air, caption dan tag dalam bahasa Indonesia dan Inggris, status publikasi, serta tautan eksternal yang Anda berikan. Data ini digunakan untuk galeri, pencarian, atribusi, dan unduhan sesuai status publikasi.</p>
+    </section>
+    <section id="ai"><h2>3. Pemrosesan dengan Gemini</h2>
+      <p>Jika Anda menjalankan analisis AI, pratinjau foto dan konteks yang Anda isi dikirim ke Google Gemini untuk membuat caption dan tag. Pada alur caption manual, caption dan tag bahasa Indonesia juga dikirim ke Gemini untuk diterjemahkan ke bahasa Inggris, meskipun kotak bantuan analisis AI tidak dicentang. Tahap penyuntingan menyimpan teks yang Anda pilih.</p>
+      <p>Untuk membatasi penggunaan layanan AI, database menyimpan ID akun, jendela waktu, dan jumlah permintaan AI pada jendela tersebut.</p>
+      <p>Jangan masukkan informasi sensitif yang tidak diperlukan dalam foto, konteks, caption, atau tag. Pemrosesan oleh penyedia mengikuti ketentuan penyedia; halaman ini tidak menjanjikan masa simpan atau penggunaan data di luar kendali Padustock.</p>
+    </section>
+    <section id="infrastruktur"><h2>4. Infrastruktur dan tautan eksternal</h2>
+      <p>Supabase menyediakan autentikasi, database, dan penyimpanan file. Aplikasi yang diterapkan menggunakan hosting Vercel untuk menyajikan halaman dan memproses permintaan. Tautan pembelian mengarah ke penyedia eksternal yang memiliki ketentuan dan kebijakan privasinya sendiri. Padustock tidak memproses pembayaran pembelian foto pada situs ini.</p>
+    </section>
+    <section id="retensi"><h2>5. Penyimpanan dan penghapusan</h2>
+      <p>Anda dapat memperbarui profil dan menghapus foto milik sendiri melalui dasbor. Penghapusan foto memeriksa dan menghapus file asli serta thumbnail sebelum menghapus baris foto. Menjadikan foto draf atau arsip hanya mengubah ketersediaan publik, bukan menghapus file.</p>
+      <p>Unggahan sementara berada di bucket privat. Unggahan yang ditinggalkan selama lebih dari 24 jam memenuhi syarat untuk pembersihan harian, apabila pekerjaan terjadwal dan konfigurasi otorisasinya berjalan. Kegagalan penyimpanan juga memicu upaya pembersihan; ini bukan jaminan bahwa setiap file selalu terhapus tepat pada jam ke-24.</p>
+      <p>Catatan minimal ID foto, kemungkinan paparan CC lama, dan waktu publikasi gratis yang teramati dipertahankan setelah foto dihapus untuk menjelaskan riwayat izin. Catatan itu tidak berisi gambar atau kontak fotografer dan tidak tersedia melalui kueri publik setelah foto dihapus. Penghapusan tidak mencabut izin CC terdahulu atau menghapus salinan yang telah diperoleh pihak lain.</p>
+      <p>Belum tersedia fitur penghapusan akun mandiri. Untuk pertanyaan atau permintaan terkait data, gunakan <a href={OWNERSHIP_REPORT_URL} target="_blank" rel="noopener noreferrer">GitHub Issues proyek</a> sebagai kontak awal dengan ringkasan yang tidak sensitif. Kanal ini publik; jangan unggah dokumen identitas atau kredensial.</p>
+    </section>
+  </LegalDocument>;
 }

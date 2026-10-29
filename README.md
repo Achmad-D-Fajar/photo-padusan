@@ -21,7 +21,7 @@
 - **Image & EXIF handling** – Server-side processing with `sharp` and `piexifjs`.
 - **50 MB photo uploads, including HEIC/HEIF** – Files upload directly to Supabase; HEIC is decoded on the server and shown as a JPEG preview. Original downloads preserve the uploaded format.
 - **Authentication** – Register / log in with Supabase Auth; `/dashboard/*` is protected by middleware.
-- **Open licensing** – Unless stated otherwise, all photos are licensed under [CC BY-NC-ND 4.0](https://creativecommons.org/licenses/by-nc-nd/4.0/).
+- **Automatic licensing** – Published photos without purchase links use [CC BY-NC-ND 4.0](https://creativecommons.org/licenses/by-nc-nd/4.0/). External listings direct visitors to the provider's applicable licensing process; a preview does not itself grant general reuse permission. Valid prior CC grants continue after link/status changes.
 
 ## 🧰 Tech Stack
 
@@ -101,6 +101,9 @@ GEMINI_API_KEY=your-gemini-api-key
 # Server-only: account creation, storage finalization, signed downloads
 SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 
+# Canonical public URL used in photo pages and newly generated preview metadata
+NEXT_PUBLIC_SITE_URL=https://padustock.vercel.app
+
 # Vercel sends this bearer token to the daily staging cleanup job
 CRON_SECRET=your-long-random-secret
 ```
@@ -155,10 +158,18 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 | `npm run start` | Run the production build |
 | `npm run lint` | Lint the codebase with ESLint |
 | `npm test` | Run local security, upload lifecycle, and image processing regression tests |
+| `npm run test:ui` | Review the real pages with local Supabase fixtures at mobile/desktop widths |
 
 For an additional real HEIC decoder check, set `HEIC_TEST_FILE` to a local HEIC
 file before running `npm test`. Normal tests generate their own JPEG fixtures
 and use mocked Supabase/Gemini services; they do not modify a deployed project.
+Licensing migration tests also execute SQL triggers, roles, and RLS in an isolated
+PGlite PostgreSQL engine. Its minimal public-view fixture is explicitly test-only,
+not a reconstruction of the deployed view. It does not test live Supabase JWTs or
+prove the configuration of a hosted project. Browser checks use a local mock
+Supabase service; install Chromium once with `npx playwright install chromium`.
+Alternatively, set `PLAYWRIGHT_CHANNEL=chrome` or `msedge` to use an installed browser.
+Screenshots and reports are written to ignored `test-results/` and `playwright-report/`.
 
 ## ☁️ Deployment
 
@@ -171,9 +182,54 @@ The easiest way to deploy is with [Vercel](https://vercel.com/new):
 
 See the [Next.js deployment docs](https://nextjs.org/docs/app/building-your-application/deploying) for other options.
 
+### Licensing and legal-document release
+
+The local revised documents are prepared drafts: `src/lib/legal-documents.ts`
+contains their versions/revision dates with `publishedOn: null`. This is not a
+claim that they have been published or that a remote migration has run.
+
+1. Establish the authorized Supabase project and deployment target. Apply
+   `supabase/migrations/202610290001_photo_licensing.sql` to the existing schema.
+   It requires `photos`, `vw_public_photos`, and the Supabase `anon`/`authenticated`
+   roles. It does not replace the view or alter existing photo RLS. It backfills
+   possible legacy exposure without inventing historical licensing timestamps.
+2. Set each document's `publishedOn` to the actual release day (ISO `YYYY-MM-DD`)
+   in the shared manifest. Freeze the versions for that text and deploy the
+   corrected registration, notices, and documents. Future substantive revisions
+   require new versions; do not backfill acceptance for existing accounts.
+3. Verify free and external listings, full page/modal notices, and the new-account
+   checkbox. Until activation, new photos are conservatively marked as possibly
+   exposed to the previous blanket CC notice.
+4. Only after verification, run `scripts/activate-photo-licensing.sql` against the
+   authorized project. It preserves all prior history, marks photos existing at
+   cutover conservatively, and enables ordinary tracking for subsequent photos.
+   It is safe to repeat and is intentionally not part of automatic migration application.
+
+Registration validates the acknowledgment and current document versions before
+creating an account. The server stores versions and its timestamp in protected
+Auth `app_metadata.legal_acknowledgment`, not a public profile or user-editable
+metadata. Existing account/profile rollback remains in place.
+
+License history is database-controlled and survives purchase-link/status changes.
+After deletion, only photo ID, legacy uncertainty, and the first observed free
+publication timestamp remain; deleted-photo records are hidden from public and
+former-owner queries. This does not identify reuploads with a different ID and
+does not claim that correcting notices revokes any valid prior grant.
+
+If rolling back to the old blanket-CC interface, first establish authorization
+and conservatively mark all existing history as possibly legacy-exposed and
+disable `corrected_policy_active` in one transaction while blocking photo writes.
+Do not silently resume old notices with ordinary tracking active.
+
+New preview metadata contains attribution and the canonical photo reference,
+without an unconditional reservation of all rights or an automatic CC grant.
+Original files and existing embedded metadata are unchanged; no bulk regeneration
+is performed. Ownership reports use the existing public GitHub Issues channel,
+which should not receive private evidence or credentials.
+
 ## 📄 License
 
-Photos on Padustock are licensed under [CC BY-NC-ND 4.0](https://creativecommons.org/licenses/by-nc-nd/4.0/) unless stated otherwise. Add a separate license for the source code if you want others to reuse it.
+Published free photos use [CC BY-NC-ND 4.0](https://creativecommons.org/licenses/by-nc-nd/4.0/): attribution, noncommercial use, and no sharing of adapted material, subject to applicable legal exceptions. External listings require checking the linked provider's applicable terms; not every listing offers identical commercial rights. Historical CC notices and recorded free publications are shown separately from current availability, and valid prior CC permissions continue. These photo permissions do not license the application source code.
 
 ## 🤝 Contributing
 

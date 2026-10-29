@@ -4,16 +4,18 @@ import ModalUI from "@/components/shared/ModalUI";
 import ProtectedImage from "@/components/shared/ProtectedImage";
 import Link from "next/link";
 import type { PublicPhotoItem } from "@/lib/queries/public-photos";
+import { attachLicenseHistory } from "@/lib/queries/photo-license-history";
+import { PhotoLicenseAction } from "@/components/shared/PhotoLicense";
 
 interface ModalPhotoPageProps {
   params: Promise<{ id: string }>;
 }
 
-function getPhotographerLabel(photo: PublicPhotoItem): string {
+function getPhotographerLabel(photo: Pick<PublicPhotoItem, "full_name" | "display_name">): string {
   return photo.full_name && photo.full_name.trim().length > 0 ? photo.full_name : `@${photo.display_name}`;
 }
 
-function getPhotographerHref(photo: PublicPhotoItem): string {
+function getPhotographerHref(photo: Pick<PublicPhotoItem, "display_name">): string {
   return `/photographer/${photo.display_name}`;
 }
 
@@ -28,7 +30,7 @@ export default async function ModalPhotoPage({ params }: ModalPhotoPageProps) {
     .single();
 
   if (error || !photo) notFound();
-  const typedPhoto = photo as PublicPhotoItem;
+  const typedPhoto = (await attachLicenseHistory(supabase, [photo]))[0];
   const combinedTags = [...new Set([...(typedPhoto.tags_id ?? []), ...(typedPhoto.tags_en ?? [])])];
 
   return (
@@ -71,19 +73,7 @@ export default async function ModalPhotoPage({ params }: ModalPhotoPageProps) {
           </div>
         )}
 
-        <a
-          href={typedPhoto.microstock_url ?? `/api/photos/download/${typedPhoto.id}`}
-          download={!typedPhoto.microstock_url}
-          target={typedPhoto.microstock_url ? "_blank" : undefined}
-          rel={typedPhoto.microstock_url ? "noopener noreferrer" : undefined}
-          className={`btn w-full border-4 border-[#111111] rounded-none font-bold text-xl uppercase h-16 shadow-[6px_6px_0px_#111111] hover:translate-y-[2px] hover:shadow-[2px_2px_0px_#111111] transition-all ${
-            typedPhoto.microstock_url 
-              ? "bg-[#332288] hover:bg-[#20155c] text-[#E5E5E5]" 
-              : "bg-[#117733] hover:bg-[#0e5c27] text-[#E5E5E5]"
-          }`}
-        >
-          {typedPhoto.microstock_url ? "Beli di Microstock" : "Download Resolusi Asli"}
-        </a>
+        <PhotoLicenseAction photo={typedPhoto} />
       </div>
     </ModalUI>
   );

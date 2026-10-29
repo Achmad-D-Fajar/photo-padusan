@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Dela_Gothic_One } from "next/font/google";
+import { CC_LICENSE_URL } from "@/lib/legal-documents";
 
 const delaGothic = Dela_Gothic_One({
   weight: "400",
@@ -52,7 +53,7 @@ export default function Footer() {
               Lisensi & Legal
             </h3>
             <p className="font-bold text-sm text-[#111111] mt-2 leading-relaxed bg-[#E5E5E5] p-3 border-2 border-[#111111]">
-              Kecuali dinyatakan lain, seluruh foto berlisensi <a href="https://creativecommons.org/licenses/by-nc-nd/4.0/" target="_blank" rel="noopener noreferrer" className="text-[#332288] underline hover:bg-[#332288] hover:text-white px-1">CC BY-NC-ND 4.0</a>.
+              Publikasi gratis menggunakan <a href={CC_LICENSE_URL} target="_blank" rel="noopener noreferrer" className="underline">CC BY-NC-ND 4.0</a>. Foto bertautan pembelian mengikuti proses lisensi penyedia; melihat pratinjau bukan izin penggunaan ulang secara umum. Izin CC terdahulu yang sah tetap berlaku. <Link href="/terms#riwayat-cc" className="underline">Riwayat lisensi</Link>.
             </p>
             <nav className="flex flex-col gap-2 mt-2">
               <Link href="/terms" className="font-bold text-base text-[#111111] hover:text-[#E5E5E5] hover:bg-[#111111] w-max px-2 -ml-2 transition-colors">
@@ -71,7 +72,7 @@ export default function Footer() {
       <div className="bg-[#111111] text-[#E5E5E5] py-4 border-t-4 border-[#111111]">
         <div className="container mx-auto px-4 max-w-6xl flex flex-col md:flex-row justify-between items-center gap-4 text-center md:text-left">
           <p className="font-bold text-sm uppercase tracking-wider">
-            &copy; {currentYear} Padustock. Semua hak dilindungi.
+            &copy; {currentYear} Padustock. Hak cipta foto milik pemegang haknya; ketentuan lisensi masing-masing berlaku.
           </p>
           <p className="font-bold text-sm">
             Sistem oleh <span className="text-[#88CCEE] px-1">Desa Padusan</span>

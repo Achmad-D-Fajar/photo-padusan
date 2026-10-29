@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Dela_Gothic_One } from "next/font/google";
 import { createClient } from "@/lib/supabase/server";
+import { CC_LICENSE_URL } from "@/lib/legal-documents";
 
 const delaGothic = Dela_Gothic_One({
   weight: "400",
@@ -29,7 +30,7 @@ export default async function AboutPage() {
       
       {/* Header Section */}
       <div className="mb-12 border-b-8 border-[#111111] pb-8">
-        <h1 className={`${delaGothic.className} text-5xl md:text-7xl uppercase tracking-wider text-[#111111] mb-6`}>
+        <h1 className={`${delaGothic.className} text-3xl sm:text-5xl md:text-7xl uppercase tracking-tight sm:tracking-wider break-words text-[#111111] mb-6`}>
           TENTANG PADUSTOCK
         </h1>
         <p className="text-xl font-bold text-[#111111] bg-[#88CCEE] border-4 border-[#111111] shadow-[4px_4px_0px_#111111] p-4 inline-block uppercase tracking-wide">
@@ -71,8 +72,9 @@ export default async function AboutPage() {
               Platform ini dirancang dengan pendekatan hibrida yang menguntungkan semua pihak:
             </p>
             <ul className="list-disc list-inside text-lg font-bold text-[#111111] space-y-3">
-              <li><strong>Untuk Pengunjung:</strong> Tersedia akses unduh gratis (resolusi asli) untuk kebutuhan personal dan non-komersial di bawah lisensi CC BY-NC-ND 4.0.</li>
-              <li><strong>Untuk Pembeli Komersial:</strong> Kami menjembatani pembeli langsung ke portofolio agensi <em>microstock</em> fotografer (seperti Shutterstock atau Adobe Stock) untuk pembelian lisensi komersial.</li>
+              <li><strong>Publikasi Gratis:</strong> Foto publik tanpa tautan pembelian ditawarkan dengan <a className="underline" href={CC_LICENSE_URL} target="_blank" rel="noopener noreferrer">CC BY-NC-ND 4.0</a>: atribusi, penggunaan nonkomersial, dan tidak membagikan adaptasi. Unduhan tidak memerlukan akun.</li>
+              <li><strong>Lisensi Eksternal:</strong> Foto dengan tautan pembelian mengarahkan Anda ke penyedia untuk memperoleh lisensi sesuai ketentuannya. Pratinjau tidak memberi izin penggunaan ulang secara umum; izin tiap penyedia dapat berbeda.</li>
+              <li><strong>Riwayat:</strong> Perubahan tautan atau status tidak mencabut izin CC terdahulu yang diberikan secara sah. <Link className="underline" href="/terms#riwayat-cc">Baca tentang riwayat lisensi</Link>.</li>
               <li><strong>Untuk Kreator:</strong> Dukungan penuh teknologi AI untuk menghasilkan metadata (<em>caption</em> & <em>tag</em> dwibahasa) secara otomatis guna menembus algoritma pencarian global.</li>
             </ul>
           </div>

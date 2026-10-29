@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient, escapeLikePattern } from "@/lib/supabase/admin";
+import { LEGAL_DOCUMENTS } from "@/lib/legal-documents";
+import { ApiError, apiErrorResponse, readJson } from "@/lib/server/api-error";
 
 export const runtime = "nodejs";
 
@@ -8,7 +10,17 @@ const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
+    const body = await readJson(request);
+    const acknowledgment = body.legalAcknowledgment;
+    if (!acknowledgment || typeof acknowledgment !== "object" || Array.isArray(acknowledgment) ||
+      !("accepted" in acknowledgment) || acknowledgment.accepted !== true ||
+      !("termsVersion" in acknowledgment) || typeof acknowledgment.termsVersion !== "string" ||
+      !("privacyVersion" in acknowledgment) || typeof acknowledgment.privacyVersion !== "string") {
+      return NextResponse.json({ success: false, error: "Setujui Syarat & Ketentuan dan nyatakan telah membaca Kebijakan Privasi." }, { status: 400 });
+    }
+    if (acknowledgment.termsVersion !== LEGAL_DOCUMENTS.terms.version || acknowledgment.privacyVersion !== LEGAL_DOCUMENTS.privacy.version) {
+      return NextResponse.json({ success: false, error: "Versi dokumen telah berubah. Muat ulang halaman dan baca dokumen terbaru." }, { status: 409 });
+    }
     const email =
       typeof body?.email === "string" ? body.email.trim().toLowerCase() : "";
     const displayName =
@@ -63,6 +75,11 @@ export async function POST(request: NextRequest) {
         email,
         password,
         email_confirm: true, // Auto-confirm agar bisa langsung login.
+        app_metadata: { legal_acknowledgment: {
+          terms_version: LEGAL_DOCUMENTS.terms.version,
+          privacy_version: LEGAL_DOCUMENTS.privacy.version,
+          accepted_at: new Date().toISOString(),
+        } },
         // Untuk produksi yang lebih strict, set false dan integrasikan
         // alur verifikasi email (mis. admin.generateLink + kirim email sendiri).
       });
@@ -114,9 +131,10 @@ export async function POST(request: NextRequest) {
       { status: 201 }
     );
   } catch (error) {
+    if (error instanceof ApiError) return apiErrorResponse(error);
     console.error("Unexpected error in /api/auth/register:", error);
     return NextResponse.json(
-      { success: false, error: "Unexpected server error." },
+      { success: false, error: "Terjadi kesalahan pada server." },
       { status: 500 }
     );
   }
