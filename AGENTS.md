@@ -119,6 +119,56 @@ npm run build
 - Preserve the authenticated daily cleanup in `vercel.json` and its
   `CRON_SECRET` check; it removes abandoned staging files older than 24 hours.
 
+## Copyright watermark (final project Keamanan Data)
+
+Spec: `SPESIFIKASI_LENGKAP_TUGAS_AKHIR.md` (team scratch folder). Roles: Wafa = crypto
+core, Dwiki = DCT engine, Sheryl = evaluation/UI. Branch
+`feature/watermark-copyright-protection`.
+
+- Watermarking is opt-in per upload via `watermark_passphrase` (8–128 chars). The
+  passphrase is never stored, logged, or persisted anywhere; without it the draft
+  route must keep the legacy raw-file move to `originals`.
+- Watermarked originals are stored as lossless PNG, intentionally deviating from
+  "preserve original bytes and format": JPEG re-encoding at upload would break the
+  BER = 0 acceptance criterion. Thumbnails keep the existing visible-stamp pipeline.
+- `image_hash` is SHA-256 of a normalized pixel representation (grayscale 32×32,
+  4-bit quantized) of the region BELOW the watermark-carrying blocks, not of the
+  full-resolution pixels. A full-res hash is impossible: the watermark itself
+  changes the pixels (circular dependency) and any lossy attack changes every bit.
+  The region choice guarantees a happy-path match and still detects copy-paste of
+  a packet into another photo. Hash mismatch is a WARNING, not a rejection — the
+  AES-GCM tag is the authority on certificate validity. This relaxes spec §4.4
+  (hard reject) to keep spec §11 scenario 3 (JPEG Q80) satisfiable; team must ratify.
+- `DEFAULT_ALPHA = 25` (upper end of spec 15–25) is measurement-based: alpha 20
+  occasionally flips 1 bit on high-frequency textures at JPEG Q80, and GCM rejects
+  the whole packet on a single bit error. Measured BER 0% at Q90/80/70, PSNR > 44 dB.
+- `watermark-dct.ts` is a working BASELINE placeholder for Dwiki: no ECC/repetition
+  and raster-order block allocation, so cropping attacks can desynchronize it.
+  Do not treat current robustness numbers as final benchmark results.
+- `/verify` and `/api/photos/verify` are public by design (dispute proof). The
+  verify route accepts multipart up to 50 MB — an explicit exception to the
+  bounded-JSON upload invariant, valid for local demo only. Vercel caps request
+  bodies (~4.5 MB); production verify needs a signed direct-upload flow first.
+- `tests/photo-api.test.cjs` indexes `UploadForm` `useState` calls by position.
+  Append new state hooks at the END of the component or those tests break.
+- Test certificates must use a fixed `creationTimestamp`: payload content changes
+  the embedded bit pattern, so wall-clock timestamps make robustness tests flaky.
+- `WATERMARK_SECRET` in local `.env.local` is unused by this passphrase-based design.
+- Local `npm run build` fails prerendering `/about` without Supabase env vars
+  (pre-existing; verified identical on clean HEAD 2026-11-18). Compile + typecheck
+  still validate new routes; report this gap instead of claiming a full build pass.
+
+Status 2026-11-18: Member 1 crypto core, baseline DCT, upload integration, and
+`/verify` UI done (11 watermark tests, full suite 81 pass / 0 fail / 1 HEIC skip,
+lint 0 errors, tsc clean). Pending: Dwiki alpha/ECC/crop optimization; Sheryl
+P01–P10 dataset, attack scripts, metrics (MSE/PSNR/SSIM/NC/BER), CSV + charts;
+report BAB I–V; production verify upload flow.
+
+History:
+- 2026-11-18: added watermark-crypto/watermark-dct/watermark-image modules, draft
+  route watermark branch, UploadForm passphrase field, public /verify page + API,
+  Navbar link, tests/watermark.test.cjs.
+
 ## AI requests
 
 - Analysis and translation require an authenticated user and share the persistent
