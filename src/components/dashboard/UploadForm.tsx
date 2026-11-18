@@ -41,6 +41,8 @@ export default function UploadForm() {
 
   const [editableAnalysis, setEditableAnalysis] = useState<EditableAnalysis | null>(null);
   const [copiedField, setCopiedField] = useState<string | null>(null);
+  // State baru ditaruh di akhir agar indeks harness tes photo-api tidak bergeser.
+  const [watermarkPassphrase, setWatermarkPassphrase] = useState("");
 
   useEffect(() => {
     return () => { if (previewUrl) URL.revokeObjectURL(previewUrl); };
@@ -101,10 +103,13 @@ export default function UploadForm() {
   }
 
   function buildBaseFormData(captionEn: string, captionId: string, tagsEn: string[], tagsId: string[]) {
-    return { caption_en: captionEn.trim(), caption_id: captionId.trim(), tags_en: tagsEn, tags_id: tagsId, publish_directly: !wantsMicrostockLink };
+    return { caption_en: captionEn.trim(), caption_id: captionId.trim(), tags_en: tagsEn, tags_id: tagsId, publish_directly: !wantsMicrostockLink, watermark_passphrase: watermarkPassphrase || undefined };
   }
 
   async function postToDraftRoute(data: ReturnType<typeof buildBaseFormData>) {
+    if (data.watermark_passphrase && data.watermark_passphrase.length < 8) {
+      throw new Error("Passphrase watermark minimal 8 karakter.");
+    }
     const path = await ensureUpload();
     try {
       const res = await fetch("/api/photos/draft", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...data, path }) });
@@ -251,6 +256,14 @@ export default function UploadForm() {
               {wantsMicrostockLink ? "Akan disimpan sebagai DRAF sampai tautan ditambahkan dan foto dipublikasikan di halaman Edit." : "Akan dipublikasikan GRATIS saat Anda menyimpan."}
             </p>
             <OwnerLicenseGuidance external={wantsMicrostockLink} />
+          </div>
+
+          <div className="border-b-4 border-[#111111] w-full" />
+
+          <div className="form-control bg-[#E5E5E5] border-4 border-[#111111] p-4 sm:p-6 shadow-[4px_4px_0px_#111111]">
+            <label className="label items-start p-0 mb-2" htmlFor="watermark-passphrase"><span className={labelClass}>Passphrase Hak Cipta (Opsional)</span></label>
+            <input id="watermark-passphrase" type="password" value={watermarkPassphrase} onChange={(e) => setWatermarkPassphrase(e.target.value.slice(0, 128))} className={textInputClass} placeholder="Minimal 8 karakter — kosongkan untuk melewati" disabled={isBusy} autoComplete="new-password" />
+            <label className="label p-0 mt-2"><span className={subLabelClass}>Bila diisi, sertifikat hak cipta terenkripsi (AES-256-GCM) ditanam tak kasat mata ke foto asli. Passphrase TIDAK disimpan server — wajib diingat untuk pembuktian di halaman /verify.</span></label>
           </div>
 
           {errorMessage && phase === "compose" && (

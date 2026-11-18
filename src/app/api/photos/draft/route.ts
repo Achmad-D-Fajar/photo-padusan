@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { processImageForStorage } from "@/lib/server/image-processing";
 import { embedMetadata } from "@/lib/server/exif-writer";
+import { embedCopyrightWatermark } from "@/lib/server/watermark-image";
+import { CapacityExceededError } from "@/lib/server/watermark-dct";
+import { WatermarkCryptoError } from "@/lib/server/watermark-crypto";
 import { requirePhotoUser, readStagedPhoto, removeStagedPhoto, removePhotoObject } from "@/lib/server/photo-upload";
 import { ApiError, apiErrorResponse, readJson } from "@/lib/server/api-error";
 import { PHOTO_UPLOAD_BUCKET, isOwnedUploadPath } from "@/lib/photo-upload";
@@ -36,6 +39,10 @@ export async function POST(request: NextRequest) {
       }
       const tagsEn = parseTags(body.tags_en, ["padusan", "indonesia", "east java", "mojokerto"]);
       const tagsId = parseTags(body.tags_id, ["padusan", "indonesia", "jawa timur", "mojokerto"]);
+      const passphrase = typeof body.watermark_passphrase === "string" ? body.watermark_passphrase : "";
+      if (passphrase && (passphrase.length < 8 || passphrase.length > 128)) {
+        throw new ApiError(400, "Passphrase watermark harus sepanjang 8–128 karakter.");
+      }
       const rawBuffer = await readStagedPhoto(supabase, user.id, path);
       // Validate and decode before creating permanent storage objects.
       const { watermarkedBuffer } = await processImageForStorage(rawBuffer);
@@ -51,11 +58,33 @@ export async function POST(request: NextRequest) {
       const { error: thumbnailError } = await supabase.storage.from("thumbnails").upload(thumbPath, finalBuffer, { contentType: "image/jpeg", upsert: false });
       if (thumbnailError) throw new ApiError(502, "Gagal mengunggah thumbnail.");
 
-      const destination = `${user.id}/original_${photoId}.${path.split(".").pop()}`;
-      originalPath = destination;
-      const { error: moveError } = await createAdminClient().storage.from(PHOTO_UPLOAD_BUCKET).move(path, destination, { destinationBucket: "originals" });
-      if (moveError) throw new ApiError(502, "Gagal menyimpan gambar asli.");
-      const { data: { publicUrl: imageUrl } } = supabase.storage.from("originals").getPublicUrl(destination);
+      // Alur pengamanan (spesifikasi §3): bila passphrase diisi, original disimpan
+      // sebagai PNG ber-watermark DCT terenkripsi; tanpa passphrase, perilaku lama
+      // (pindahkan berkas mentah) dipertahankan. Passphrase tidak pernah disimpan.
+      if (passphrase) {
+        let wm: Awaited<ReturnType<typeof embedCopyrightWatermark>>;
+        try {
+          wm = await embedCopyrightWatermark(rawBuffer, {
+            photoId, photographer: artist,
+            siteOrigin: process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") ?? "https://padustock.vercel.app",
+          }, passphrase);
+        } catch (error) {
+          if (error instanceof CapacityExceededError) throw new ApiError(422, error.message);
+          if (error instanceof WatermarkCryptoError) throw new ApiError(400, error.message);
+          throw error;
+        }
+        const wmPath = `${user.id}/original_${photoId}.png`;
+        originalPath = wmPath;
+        const { error: wmError } = await createAdminClient().storage.from("originals").upload(wmPath, wm.pngBuffer, { contentType: "image/png", upsert: false });
+        if (wmError) throw new ApiError(502, "Gagal menyimpan gambar asli ber-watermark.");
+        await removeStagedPhoto(supabase, user.id, path);
+      } else {
+        const destination = `${user.id}/original_${photoId}.${path.split(".").pop()}`;
+        originalPath = destination;
+        const { error: moveError } = await createAdminClient().storage.from(PHOTO_UPLOAD_BUCKET).move(path, destination, { destinationBucket: "originals" });
+        if (moveError) throw new ApiError(502, "Gagal menyimpan gambar asli.");
+      }
+      const { data: { publicUrl: imageUrl } } = supabase.storage.from("originals").getPublicUrl(originalPath);
       const { data: { publicUrl: thumbnailUrl } } = supabase.storage.from("thumbnails").getPublicUrl(thumbPath);
       const { data: photo, error: insertError } = await supabase.from("photos").insert({
         id: photoId, user_id: user.id, image_url: imageUrl, thumbnail_url: thumbnailUrl,
