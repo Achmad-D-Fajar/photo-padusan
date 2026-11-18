@@ -7,6 +7,8 @@ import { MAX_PHOTO_SIZE_MB, PHOTO_ACCEPT, PHOTO_UPLOAD_BUCKET, validatePhotoFile
 import { readPhotoApiData, readPhotoPreview, storageUploadError } from "@/lib/photo-api";
 import type { GeminiBilingualResult } from "@/lib/server/gemini-analysis";
 import { OwnerLicenseGuidance } from "@/components/shared/PhotoLicense";
+import WatermarkPayloadField from "./WatermarkPayloadField";
+import { watermarkPayload } from "@/lib/watermark-payload";
 
 const MAX_CONTEXT_LEN = 300;
 
@@ -24,6 +26,7 @@ export default function UploadForm() {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const uploadPathRef = useRef<string | null>(null);
+  const reviewDialogRef = useRef<HTMLDialogElement>(null);
 
   const [useAI, setUseAI] = useState(false);
   const [wantsMicrostockLink, setWantsMicrostockLink] = useState(true);
@@ -41,6 +44,14 @@ export default function UploadForm() {
 
   const [editableAnalysis, setEditableAnalysis] = useState<EditableAnalysis | null>(null);
   const [copiedField, setCopiedField] = useState<string | null>(null);
+  const [payloadInput, setPayloadInput] = useState("");
+  const [watermarkEnabled, setWatermarkEnabled] = useState(true);
+  const payloadValid = !watermarkEnabled || watermarkPayload(payloadInput).valid;
+  const reviewOpen = phase === "review" || (phase === "saving" && useAI && !!editableAnalysis);
+
+  useEffect(() => {
+    if (reviewOpen) reviewDialogRef.current?.showModal();
+  }, [reviewOpen]);
 
   useEffect(() => {
     return () => { if (previewUrl) URL.revokeObjectURL(previewUrl); };
@@ -119,6 +130,7 @@ export default function UploadForm() {
 
   async function handleManualSubmit() {
     if (!originalFile) return;
+    if (!payloadValid) { setErrorMessage("Kurangi payload hingga maksimal 512 byte."); return; }
     if (!manualCaption.trim()) { setErrorMessage("Caption tidak boleh kosong."); return; }
     setPhase("saving"); setErrorMessage("");
 
@@ -140,6 +152,7 @@ export default function UploadForm() {
 
   async function runAnalysis() {
     if (!originalFile) return;
+    if (!payloadValid) { setErrorMessage("Kurangi payload hingga maksimal 512 byte."); return; }
     setPhase("analyzing"); setErrorMessage("");
 
     try {
@@ -155,6 +168,7 @@ export default function UploadForm() {
 
   async function handleSaveDraft() {
     if (!originalFile || !editableAnalysis) return;
+    if (!payloadValid) { setErrorMessage("Kurangi payload hingga maksimal 512 byte."); return; }
     setPhase("saving"); setErrorMessage("");
 
     try {
@@ -186,7 +200,7 @@ export default function UploadForm() {
 
   return (
     <>
-      <div className="card bg-white border-4 border-[#111111] shadow-[12px_12px_0px_#111111] rounded-none p-4 sm:p-8">
+      <div inert={reviewOpen} className="card bg-white border-4 border-[#111111] shadow-[12px_12px_0px_#111111] rounded-none p-4 sm:p-8">
         <div className="card-body gap-8 p-0">
           <div className="form-control">
             <label className="label items-start p-0 mb-2" htmlFor="file-input">
@@ -259,22 +273,24 @@ export default function UploadForm() {
             </div>
           )}
 
+          <WatermarkPayloadField value={payloadInput} onChange={setPayloadInput} enabled={watermarkEnabled} onEnabledChange={setWatermarkEnabled} disabled={isBusy} />
+
           {useAI ? (
-            <button type="button" onClick={runAnalysis} className={primaryBtnClass} disabled={!originalFile || isBusy}>
+            <button type="button" onClick={runAnalysis} className={primaryBtnClass} disabled={!originalFile || isBusy || !payloadValid}>
               {phase === "analyzing" ? "Sedang Menganalisis..." : "JALANKAN ANALISIS AI"}
             </button>
           ) : (
-            <button type="button" onClick={handleManualSubmit} className={primaryBtnClass} disabled={!originalFile || isBusy}>
+            <button type="button" onClick={handleManualSubmit} className={primaryBtnClass} disabled={!originalFile || isBusy || !payloadValid}>
               {phase === "saving" ? "Menyimpan..." : saveActionLabel}
             </button>
           )}
         </div>
       </div>
 
-      {(phase === "review" || (phase === "saving" && editableAnalysis)) && editableAnalysis && (
-        <dialog className="modal modal-open bg-black/60 backdrop-blur-sm">
+      {reviewOpen && editableAnalysis && (
+        <dialog ref={reviewDialogRef} aria-labelledby="ai-review-title" onCancel={event => { event.preventDefault(); if (phase !== "saving") setPhase("compose"); }} className="modal bg-black/60 backdrop-blur-sm">
           <div className="modal-box max-w-3xl w-full rounded-none border-4 border-[#111111] bg-white p-6 sm:p-10 shadow-[16px_16px_0px_#111111]">
-            <h3 className="font-display font-bold text-4xl uppercase border-b-4 border-[#111111] pb-4 mb-6">Tinjau & Edit AI</h3>
+            <h3 id="ai-review-title" className="font-display font-bold text-3xl sm:text-4xl uppercase border-b-4 border-[#111111] pb-4 mb-6">Tinjau & Edit AI</h3>
             
             <div className="flex flex-col gap-8">
               <div className="form-control">
@@ -325,14 +341,16 @@ export default function UploadForm() {
               </div>
             )}
 
+            <div className="mt-8"><WatermarkPayloadField value={payloadInput} onChange={setPayloadInput} enabled={watermarkEnabled} onEnabledChange={setWatermarkEnabled} disabled={phase === "saving"} /></div>
+
             <div className="modal-action flex-col sm:flex-row gap-4 mt-10">
               <button type="button" onClick={() => { setPhase("compose"); setErrorMessage(""); }} className="btn bg-[#E5E5E5] hover:bg-[#111111] hover:text-white text-[#111111] border-4 border-[#111111] rounded-none font-bold text-xl uppercase h-16 shadow-[4px_4px_0px_#111111]" disabled={phase === "saving"}>
                 UBAH GAMBAR
               </button>
-              <button type="button" onClick={runAnalysis} className="btn bg-transparent hover:bg-[#E5E5E5] text-[#111111] border-4 border-[#111111] rounded-none font-bold text-xl uppercase h-16 shadow-[4px_4px_0px_#111111]" disabled={phase === "saving"}>
+              <button type="button" onClick={runAnalysis} className="btn bg-transparent hover:bg-[#E5E5E5] text-[#111111] border-4 border-[#111111] rounded-none font-bold text-xl uppercase h-16 shadow-[4px_4px_0px_#111111]" disabled={phase === "saving" || !payloadValid}>
                 ULANGI AI
               </button>
-              <button type="button" onClick={handleSaveDraft} className={`${primaryBtnClass} flex-1`} disabled={phase === "saving"}>
+              <button type="button" onClick={handleSaveDraft} className={`${primaryBtnClass} flex-1`} disabled={phase === "saving" || !payloadValid}>
                 {phase === "saving" ? "MENYIMPAN..." : saveActionLabel}
               </button>
             </div>

@@ -119,6 +119,24 @@ npm run build
 - Preserve the authenticated daily cleanup in `vercel.json` and its
   `CRON_SECRET` check; it removes abandoned staging files older than 24 hours.
 
+## Watermark frontend
+
+- Watermark payload preparation is client-only: `watermark-payload.ts` resolves
+  blank text to `PADUSTOCK-IWM-DEMO-v1` and enforces 512 UTF-8 bytes without
+  truncation. Do not add the field to upload, analysis, translation, or save APIs.
+- Keep the compact watermark disclosure immediately above upload/review actions.
+  Default information stays outside it; payload and opt-out state survive AI
+  review and retries. Opt-out is client-only, retains typed text, and bypasses
+  payload validation while disabled. Explanation/risk links open the public
+  `/about/hidden-watermark` page in a new tab so the form is not discarded.
+  Keep future preview-only scope distinct from current unconnected behavior.
+- `/dashboard/extract` authenticates on the server and renders `ExtractForm`
+  without an extractor. Its optional client callback is the integration boundary;
+  production must show unavailable until a real adapter is authorized. Simulated
+  success belongs only in `tests/ui/fixture-app`, a separate local Next app.
+  No payload embedding, encryption, backend extraction, or download changes are
+  implemented by this frontend. Preserve existing visible preview watermarking.
+
 ## AI requests
 
 - Analysis and translation require an authenticated user and share the persistent

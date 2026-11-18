@@ -8,6 +8,7 @@
 }
 
 @layer base {
+  html, body { overflow-x: clip; }
   :root {
     --rounded-box: 0rem;
     --rounded-btn: 0rem;

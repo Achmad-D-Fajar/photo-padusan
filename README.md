@@ -17,6 +17,9 @@
 - **Photo detail pages** – Every photo has its own page (`/photo/[id]`).
 - **Photographer profiles** – View all works by a photographer (`/photographer/[username]`).
 - **Upload dashboard** – Registered users upload their work at `/dashboard/upload`.
+- **Watermark frontend preparation** – Immediately above the upload/review actions, a compact “Edit watermark (opsional)” disclosure offers a 512-byte UTF-8 payload and an opt-out button. The default message stays visible outside the disclosure. Blank input resolves to `PADUSTOCK-IWM-DEMO-v1`; other text is preserved exactly. Payload and enable/disable choice stay in client state through manual/AI review and retries, and are not sent to APIs, persisted, or embedded in images. Opting out retains the text for re-enabling and bypasses payload validation while disabled.
+- **Hidden watermark explanation** – Public `/about/hidden-watermark` explains the planned preview-only scope, current unconnected state, and limitations. Upload links open it in a new tab to preserve form state; the risk acknowledgment links directly to `#risiko`. No unique photo identifier or source URL is automatically embedded in the shared demo payload.
+- **Extraction frontend** – Authenticated `/dashboard/extract` offers local file selection and a full-image preview (with a fallback for browser-unsupported formats). Extraction is disabled with “Fitur ekstraksi belum terhubung”. `ExtractForm` accepts an optional client callback `(file: File) => Promise<{ payload: string; byteLength: number }>`; no production extractor or fabricated success is included. Algorithms, encryption, metadata payloads, and download changes remain deferred.
 - **AI-assisted captions** – Google Gemini helps generate photo descriptions, with the option to write captions and tags manually.
 - **Image & EXIF handling** – Server-side processing with `sharp` and `piexifjs`.
 - **50 MB photo uploads, including HEIC/HEIF** – Files upload directly to Supabase; HEIC is decoded on the server and shown as a JPEG preview. Original downloads preserve the uploaded format.
@@ -44,9 +47,11 @@
 | `/photo/[id]` | Photo detail page | Public |
 | `/photographer/[username]` | Photographer profile and works | Public |
 | `/about` | About the community | Public |
+| `/about/hidden-watermark` | Hidden watermark preparation, opt-out consequences and limitations | Public |
 | `/terms`, `/privacy` | Terms & Conditions, Privacy Policy | Public |
 | `/login`, `/register` | Authentication | Logged-out only |
 | `/dashboard/*` | Dashboard, including `/dashboard/upload` | Logged-in only |
+| `/dashboard/extract` | Local file preview; extraction integration unavailable | Logged-in only |
 
 Access rules are enforced in `middleware.ts`, which also refreshes Supabase sessions. Unauthenticated users are redirected to `/login`, and logged-in users are redirected from `/login` and `/register` to `/dashboard`.
 
@@ -158,11 +163,18 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 | `npm run start` | Run the production build |
 | `npm run lint` | Lint the codebase with ESLint |
 | `npm test` | Run local security, upload lifecycle, and image processing regression tests |
-| `npm run test:ui` | Review the real pages with local Supabase fixtures at mobile/desktop widths |
+| `npm run test:ui` | Review real pages and watermark frontend states with local fixtures at mobile/desktop widths |
 
 For an additional real HEIC decoder check, set `HEIC_TEST_FILE` to a local HEIC
 file before running `npm test`. Normal tests generate their own JPEG fixtures
 and use mocked Supabase/Gemini services; they do not modify a deployed project.
+Browser tests also start a separate Next app from `tests/ui/fixture-app` on
+`127.0.0.1:3101` to exercise the extraction callback, including explicitly labeled
+simulated success and failures. It is outside the production route tree and is
+not a demo clone. The main app and Supabase fixtures use ports 3100 and 54321.
+New frontend checks include UTF-8 payload limits, manual/AI retries with unchanged
+API bodies, unavailable extraction, clipboard errors, stale results, and blob URL
+cleanup. Responsive extraction checks also cover 320, 375, 414, and 768 px widths.
 Licensing migration tests also execute SQL triggers, roles, and RLS in an isolated
 PGlite PostgreSQL engine. Its minimal public-view fixture is explicitly test-only,
 not a reconstruction of the deployed view. It does not test live Supabase JWTs or

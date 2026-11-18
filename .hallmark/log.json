@@ -1,0 +1,4 @@
+[
+  { "date": "2026-11-18", "macrostructure": "Long Document", "theme": "Existing Padustock", "enrichment": "none", "brief": "Public hidden watermark explanation and compact upload controls; current unconnected status and preview-only opt-out scope" },
+  { "date": "2026-11-18", "macrostructure": "Workbench", "theme": "Existing Padustock", "enrichment": "none", "brief": "Optional client-only watermark payload and unconnected extraction frontend; existing navigation/footer preserved" }
+]
