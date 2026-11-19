@@ -5,7 +5,7 @@ import { OWNERSHIP_REPORT_URL } from "@/lib/legal-documents";
 
 export const metadata: Metadata = {
   title: "Tentang Watermark Tersembunyi | Padustock",
-  description: "Pilihan payload, risiko menonaktifkan, dan batasan rancangan watermark tersembunyi Padustock. Saat ini fitur belum terhubung.",
+  description: "Pilihan payload, risiko menonaktifkan, dan batasan watermark tersembunyi Padustock. Ekstraksi saat ini menggunakan simulasi berdasarkan nama file.",
 };
 
 export default function HiddenWatermarkPage() {
@@ -17,7 +17,7 @@ export default function HiddenWatermarkPage() {
     <div className="watermark-article">
       <aside className="watermark-panel" aria-label="Ringkasan dan status fitur">
         <h2>Informasi sumber untuk pratinjau</h2>
-        <p><strong>Status saat ini: belum terhubung.</strong> Formulir baru menyiapkan pilihan dan teks di browser. Belum ada payload yang disisipkan, dikirim, atau disimpan; ekstraksi di aplikasi utama belum tersedia.</p>
+        <p><strong>Mode simulasi — Padustock Demo.</strong> Tidak ada payload yang disisipkan ke gambar. Halaman ekstraksi menampilkan teks tetap berdasarkan nama file; hasil tersebut bukan pembacaan watermark atau dekripsi.</p>
         <p>Rancangannya adalah menyertakan informasi rujukan di pratinjau tanpa menambahkan tulisan yang terlihat. Jika informasi berhasil dibaca kembali, rujukan tersebut dapat membantu menelusuri sumber foto.</p>
         <ul>
           <li>Cakupan yang direncanakan hanya pratinjau dari unggahan tersebut. File asli tetap dipertahankan.</li>
@@ -53,7 +53,7 @@ export default function HiddenWatermarkPage() {
         <p>Di bagian bawah <Link href="/dashboard/upload">formulir unggah</Link>, lihat nilai bawaan lalu buka “Edit watermark (opsional)” jika ingin mengganti teks atau menonaktifkan pilihannya. Periksa penghitung byte, lalu lanjutkan alur unggah biasa. Pilihan ini juga dapat diubah saat meninjau hasil AI.</p>
         <p>Untuk saat ini, pilihan hanya bertahan selama Anda berada di formulir tersebut dan tidak ikut tersimpan bersama foto. Setelah fitur dihubungkan, cakupan yang dimaksud adalah pratinjau yang dibuat dari unggahan itu.</p>
         <h3>Membaca kembali informasi</h3>
-        <p>Masuk ke akun, buka <Link href="/dashboard/extract">halaman ekstraksi</Link>, dan pilih gambar. Saat ini Anda dapat meninjau file, tetapi tombol ekstraksi tetap nonaktif karena layanannya belum terhubung.</p>
+        <p>Masuk ke akun, buka <Link href="/dashboard/extract">halaman ekstraksi</Link>, dan pilih gambar. Pada salinan demo ini Anda dapat menjalankan skenario ekstraksi. Hasilnya ditentukan konfigurasi dan nama file, bukan data gambar.</p>
         <p>Ketika tersedia kelak, hasil berhasil berarti ada informasi yang dapat ditampilkan untuk Anda periksa. Hasil “tidak terdeteksi” berarti proses tersebut tidak berhasil membaca informasi; itu tidak membuktikan bahwa gambar tidak pernah memiliki watermark.</p>
       </section>
       <section id="risiko">

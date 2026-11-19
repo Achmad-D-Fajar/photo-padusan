@@ -22,13 +22,57 @@ are bundled with their licenses in `src/assets/fonts` and loaded through
 - **Photographer profiles** – View all works by a photographer (`/photographer/[username]`).
 - **Upload dashboard** – Registered users upload their work at `/dashboard/upload`.
 - **Watermark frontend preparation** – Immediately above the upload/review actions, a compact “Edit watermark (opsional)” disclosure offers a 512-byte UTF-8 payload and an opt-out button. The default message stays visible outside the disclosure. Blank input resolves to `PADUSTOCK-IWM-v1`; other text is preserved exactly. Payload and enable/disable choice stay in client state through manual/AI review and retries, and are not sent to APIs, persisted, or embedded in images. Opting out retains the text for re-enabling and bypasses payload validation while disabled.
-- **Hidden watermark explanation** – Public `/about/hidden-watermark` explains the planned preview-only scope, current unconnected state, and limitations. Upload links open it in a new tab to preserve form state; the risk acknowledgment links directly to `#risiko`. No unique photo identifier or source URL is automatically embedded in the shared default payload.
-- **Extraction frontend** – Authenticated `/dashboard/extract` offers local file selection and a full-image preview (with a fallback for browser-unsupported formats). Extraction is disabled with “Fitur ekstraksi belum terhubung”. `ExtractForm` accepts an optional client callback `(file: File) => Promise<{ payload: string; byteLength: number }>`; no production extractor or fabricated success is included. Algorithms, encryption, metadata payloads, and download changes remain deferred.
+- **Hidden watermark explanation** – Public `/about/hidden-watermark` explains the planned preview-only scope, the current simulation, and its limitations. Upload links open it in a new tab to preserve form state; the risk link points directly to `#risiko`. No unique photo identifier or source URL is automatically embedded in the shared default payload.
+- **Demo extraction** – Authenticated `/dashboard/extract` offers local file selection, a full-image preview, and explicitly labeled filename-driven results. `DemoExtractForm` injects a scenario callback into the reusable `ExtractForm`. Files stay in the browser; this does not embed, recover, encrypt, or decrypt watermark data. Only downloads captioned `padustock demo` receive additional reference IDs in their filenames; original file contents are unchanged.
 - **AI-assisted captions** – Google Gemini helps generate photo descriptions, with the option to write captions and tags manually.
 - **Image & EXIF handling** – Server-side processing with `sharp` and `piexifjs`.
 - **50 MB photo uploads, including HEIC/HEIF** – Files upload directly to Supabase; HEIC is decoded on the server and shown as a JPEG preview. Original downloads preserve the uploaded format.
 - **Authentication** – Register / log in with Supabase Auth; `/dashboard/*` is protected by middleware.
 - **Automatic licensing** – Published photos without purchase links use [CC BY-NC-ND 4.0](https://creativecommons.org/licenses/by-nc-nd/4.0/). External listings direct visitors to the provider's applicable licensing process; a preview does not itself grant general reuse permission. Valid prior CC grants continue after link/status changes.
+
+## Demo extraction settings
+
+This working tree includes the demonstration changes for a separate branch.
+Run `npm run dev`, sign in, and open `/dashboard/extract`.
+
+The `capstoneDemo` branch uses these recording scenarios:
+
+| Scenario | Upload preparation | Download filename | Simulated result |
+| --- | --- | --- | --- |
+| 1 | Caption `padustock demo`, empty custom payload, external link unchecked | `padustock-demo-<photo UUID>-<uploader UUID>-padustock.<extension>` | JSON with `v`, photo/uploader IDs from the filename, `photographer_name: "Wafa"`, and the canonical photo URL |
+| 2 | AI captions, the 445-byte Lorem ipsum text in **Teks payload**, external link unchecked | Normal caption-based filename | The exact configured Lorem ipsum text |
+| 3 | Caption `no watermark`, external link unchecked, hidden-watermark opt-out selected | `no-watermark-padustock.<extension>` | Watermark not detected |
+
+The Lorem ipsum belongs in the custom payload field, not the AI context or
+caption fields, which retain their separate 300-character limits. Copy the exact
+text from `DEMO_EXTRACTION.defaultPayload`. Caption-based filename recognition is
+independent of the upload controls: the extractor does not read their values.
+
+For rehearsals, manually naming a file `padustock-demo-padustock.jpg` returns the
+fixed `DEMO_ATTRIBUTION` JSON. Its valid UUIDv4 values are sample references, not
+real database records. A newly downloaded scenario-1 file instead carries the
+actual photo and uploader IDs, so its displayed URL matches the listing.
+
+Edit `DEMO_ATTRIBUTION` and `DEMO_EXTRACTION` in `src/lib/demo-extraction.ts`:
+
+| Setting | Behavior |
+| --- | --- |
+| `DEMO_ATTRIBUTION` | Sample scenario-1 UUIDs, public name, and photo URL |
+| `defaultPayload` | Exact 445-byte Lorem ipsum text for scenario 2 and other accepted filenames |
+| `noWatermarkFilename` | `no-watermark-padustock.jpg` returns no detection; its stem also matches other supported formats |
+| `alternateFilename` | `padustock-demo-padustock.jpg` returns the fixed example attribution JSON |
+| `alternatePayload` | Formatted JSON generated from `DEMO_ATTRIBUTION` |
+| `photographerName` | Name displayed for ID-bearing scenario-1 downloads; defaults to the sample name `Wafa` |
+| `photoPageBaseUrl` | Canonical prefix for photo URLs built from filename references |
+| `delayMs` | Processing-state delay |
+
+Names match without regard to letter case. Repeated-download suffixes such as
+` (1)` before the extension are supported. Keep the simulation notice visible.
+The upload payload and opt-out controls do not determine these fixed results.
+Normal login/uploads still use the configured Supabase project; only the
+extraction scenarios run entirely in the browser. Downloads continue to serve
+the original bytes: an original-versus-download comparison demonstrates byte
+preservation, not invisible watermark embedding or its visual quality.
 
 ## 🧰 Tech Stack
 
@@ -55,7 +99,7 @@ are bundled with their licenses in `src/assets/fonts` and loaded through
 | `/terms`, `/privacy` | Terms & Conditions, Privacy Policy | Public |
 | `/login`, `/register` | Authentication | Logged-out only |
 | `/dashboard/*` | Dashboard, including `/dashboard/upload` | Logged-in only |
-| `/dashboard/extract` | Local file preview; extraction integration unavailable | Logged-in only |
+| `/dashboard/extract` | Local file preview and filename-driven extraction simulation | Logged-in only |
 
 Access rules are enforced in `middleware.ts`, which also refreshes Supabase sessions. Unauthenticated users are redirected to `/login`, and logged-in users are redirected from `/login` and `/register` to `/dashboard`.
 
@@ -177,7 +221,7 @@ Browser tests also start a separate Next app from `tests/ui/fixture-app` on
 controlled success and failure responses. This component harness is outside the
 production route tree. The main app and Supabase fixtures use ports 3100 and 54321.
 New frontend checks include UTF-8 payload limits, manual/AI retries with unchanged
-API bodies, unavailable extraction, clipboard errors, stale results, and blob URL
+API bodies, extraction result states, clipboard errors, stale results, and blob URL
 cleanup. Responsive extraction checks also cover 320, 375, 414, and 768 px widths.
 Licensing migration tests also execute SQL triggers, roles, and RLS in an isolated
 PGlite PostgreSQL engine. Its minimal public-view fixture is explicitly test-only,
