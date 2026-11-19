@@ -8,6 +8,7 @@ const sharpRuntimeFiles = [
 ];
 
 const nextConfig: NextConfig = {
+  turbopack: { root: __dirname },
   serverExternalPackages: ["sharp", "heic-decode"],
   outputFileTracingIncludes: {
     "/api/photos/preview": sharpRuntimeFiles,

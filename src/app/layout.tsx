@@ -1,26 +1,10 @@
 import type { Metadata } from "next";
-import { Atkinson_Hyperlegible, Space_Grotesk, Dela_Gothic_One } from "next/font/google";
+import { atkinson, spaceGrotesk, delaGothic } from "@/lib/fonts";
 import "./globals.css";
+import "../../tokens.css";
+import "../components/dashboard/watermark.css";
 import Navbar from "@/components/layouts/Navbar";
 import Footer from "@/components/layouts/Footer";
-
-const atkinson = Atkinson_Hyperlegible({
-  weight: ["400", "700"],
-  subsets: ["latin"],
-  variable: "--font-atkinson",
-});
-
-const spaceGrotesk = Space_Grotesk({
-  weight: ["400", "700"],
-  subsets: ["latin"],
-  variable: "--font-space-grotesk",
-});
-
-const delaGothic = Dela_Gothic_One({
-  weight: "400", 
-  subsets: ["latin"],
-  variable: "--font-dela-gothic",
-});
 
 export const metadata: Metadata = {
   title: "Padustock",

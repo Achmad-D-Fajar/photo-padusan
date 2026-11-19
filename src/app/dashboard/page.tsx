@@ -156,12 +156,15 @@ export default async function DashboardPage({
           </p>
         </div>
         
-        <Link 
-          href="/dashboard/upload" 
-          className="btn bg-[#117733] hover:bg-[#0e5c27] text-white border-4 border-[#111111] rounded-none font-bold text-xl uppercase h-16 px-8 shadow-[6px_6px_0px_#111111] hover:translate-y-[2px] hover:shadow-[4px_4px_0px_#111111] transition-all flex-shrink-0"
-        >
-          + UNGGAH FOTO BARU
-        </Link>
+        <div className="flex flex-col gap-4 shrink-0">
+          <Link href="/dashboard/extract" className="watermark-button">Ekstraksi watermark</Link>
+          <Link
+            href="/dashboard/upload"
+            className="btn bg-[#117733] hover:bg-[#0e5c27] text-white border-4 border-[#111111] rounded-none font-bold text-xl uppercase h-16 px-8 shadow-[6px_6px_0px_#111111] hover:translate-y-[2px] hover:shadow-[4px_4px_0px_#111111] transition-all flex-shrink-0"
+          >
+            + UNGGAH FOTO BARU
+          </Link>
+        </div>
       </div>
 
       {/* WRAPPER PENCARIAN */}

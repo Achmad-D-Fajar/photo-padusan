@@ -11,6 +11,9 @@ is named `photo-padusan`; the npm package is named `paduphoto`.
 
 - Use the existing Next.js App Router, React, strict TypeScript, Tailwind CSS,
   and daisyUI patterns. Use npm and keep `package-lock.json` with dependency changes.
+- Load shared fonts from `src/lib/fonts.ts` with `next/font/local`. Keep the Latin
+  font files and their licenses in `src/assets/fonts` so builds do not depend on
+  remote font downloads. Preserve the stylesheet's existing font variables.
 - Keep interface messages in Indonesian. Preserve the separate Indonesian and
   English caption/tag fields (`caption_id`, `caption_en`, `tags_id`, `tags_en`).
 - `src/app`: pages, route handlers, auth actions, and intercepted photo modals.
@@ -125,9 +128,12 @@ Spec: `SPESIFIKASI_LENGKAP_TUGAS_AKHIR.md` (team scratch folder). Roles: Wafa = 
 core, Dwiki = DCT engine, Sheryl = evaluation/UI. Branch
 `feature/watermark-copyright-protection`.
 
-- Watermarking is opt-in per upload via `watermark_passphrase` (8–128 chars). The
-  passphrase is never stored, logged, or persisted anywhere; without it the draft
-  route must keep the legacy raw-file move to `originals`.
+- Watermarking is opt-out per upload via Dwiki's toggle (`watermarkEnabled`).
+  When enabled, `watermark_passphrase` (8–128 chars) is REQUIRED client-side and
+  `watermark_payload` (≤512 UTF-8 bytes, blank → `PADUSTOCK-IWM-v1`) is embedded
+  as the optional `reference_payload` certificate field. The passphrase is never
+  stored, logged, or persisted anywhere; with the toggle off the draft route must
+  keep the legacy raw-file move to `originals`.
 - Watermarked originals are stored as lossless PNG, intentionally deviating from
   "preserve original bytes and format": JPEG re-encoding at upload would break the
   BER = 0 acceptance criterion. Thumbnails keep the existing visible-stamp pipeline.
@@ -149,8 +155,11 @@ core, Dwiki = DCT engine, Sheryl = evaluation/UI. Branch
   verify route accepts multipart up to 50 MB — an explicit exception to the
   bounded-JSON upload invariant, valid for local demo only. Vercel caps request
   bodies (~4.5 MB); production verify needs a signed direct-upload flow first.
+  The route returns `code: "not-found"` (422) when no packet exists so clients can
+  distinguish it from wrong-key/tamper rejection without matching message text.
 - `tests/photo-api.test.cjs` indexes `UploadForm` `useState` calls by position.
   Append new state hooks at the END of the component or those tests break.
+  Current order ends: payloadInput, watermarkEnabled, watermarkPassphrase.
 - Test certificates must use a fixed `creationTimestamp`: payload content changes
   the embedded bit pattern, so wall-clock timestamps make robustness tests flaky.
 - `WATERMARK_SECRET` in local `.env.local` is unused by this passphrase-based design.
@@ -158,16 +167,47 @@ core, Dwiki = DCT engine, Sheryl = evaluation/UI. Branch
   (pre-existing; verified identical on clean HEAD 2026-11-18). Compile + typecheck
   still validate new routes; report this gap instead of claiming a full build pass.
 
-Status 2026-11-18: Member 1 crypto core, baseline DCT, upload integration, and
-`/verify` UI done (11 watermark tests, full suite 81 pass / 0 fail / 1 HEIC skip,
-lint 0 errors, tsc clean). Pending: Dwiki alpha/ECC/crop optimization; Sheryl
-P01–P10 dataset, attack scripts, metrics (MSE/PSNR/SSIM/NC/BER), CSV + charts;
-report BAB I–V; production verify upload flow.
+Status 2026-11-19: merged `capstoneDemo` UI into this branch and replaced the
+filename simulation with the real engine end-to-end (upload payload+passphrase →
+encrypted certificate with optional reference_payload → DCT embed; extract page
+and /verify → real DCT extraction + GCM decrypt). Pending: Dwiki alpha/ECC/crop
+optimization; Sheryl P01–P10 dataset, attack scripts, metrics (MSE/PSNR/SSIM/NC/BER),
+CSV + charts; report BAB I–V; production verify upload flow.
 
 History:
 - 2026-11-18: added watermark-crypto/watermark-dct/watermark-image modules, draft
   route watermark branch, UploadForm passphrase field, public /verify page + API,
   Navbar link, tests/watermark.test.cjs.
+- 2026-11-19: merged capstoneDemo; wired WatermarkPayloadField + opt-out to the
+  real draft route, added reference_payload to the certificate schema, replaced
+  DemoExtractForm with RealExtractForm (/api/photos/verify adapter), ExtractForm
+  gained passphrase input + real server error surfacing, rewrote the
+  /about/hidden-watermark copy from simulation notices to the real feature.
+
+## Watermark frontend (integrated with the real engine)
+
+- `watermark-payload.ts` resolves blank text to `PADUSTOCK-IWM-v1` and enforces
+  512 UTF-8 bytes without truncation. The payload text IS sent to the draft route
+  (`watermark_payload`) when the watermark toggle is enabled, together with the
+  passphrase; both are absent when opted out. Never add them to analysis or
+  translation APIs.
+- Keep the compact watermark disclosure immediately above upload/review actions
+  (the settings section must remain the last sibling before the action button).
+  Payload and opt-out state survive AI review and retries. Opt-out retains typed
+  text, bypasses payload validation, and disables the passphrase requirement.
+  Explanation/risk links open `/about/hidden-watermark` in a new tab.
+- `/dashboard/extract` authenticates on the server and renders `RealExtractForm`,
+  which injects `extractRealPayload` (POST /api/photos/verify) into `ExtractForm`
+  with `requiresPassphrase`. `ExtractForm` surfaces the adapter's original error
+  message (e.g. "Authentication Error (Invalid Tag)") — keep that behavior.
+- `src/lib/demo-extraction.ts` and its node tests are the LEGACY filename-driven
+  simulation kept for reference; it is used only on the `capstoneDemo` branch and
+  by the demo download-name test. The app on this branch never imports it.
+  `demo-download.ts` still decorates download filenames for caption
+  `padustock-demo` (photo/uploader UUIDs); harmless, kept from Dwiki's work.
+- `tests/ui/fixture-app` remains a separate local component test harness for
+  `ExtractForm` (adapter injected, no server). Preserve existing visible preview
+  watermarking.
 
 ## AI requests
 

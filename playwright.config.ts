@@ -13,6 +13,10 @@ export default defineConfig({
     { name: "desktop", use: { viewport: { width: 1440, height: 1000 } } },
   ],
   webServer: [
+    {
+      command: "node node_modules/next/dist/bin/next dev tests/ui/fixture-app --port 3101 --hostname 127.0.0.1",
+      url: "http://127.0.0.1:3101", timeout: 180_000, reuseExistingServer: false,
+    },
     { command: "node tests/ui/mock-supabase.cjs", url: "http://127.0.0.1:54321/health", reuseExistingServer: false },
     {
       command: "node node_modules/next/dist/bin/next dev --port 3100 --hostname 127.0.0.1",

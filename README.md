@@ -6,6 +6,10 @@
 
 > The interface is in Indonesian, and the repository is named `photo-padusan`.
 
+The existing Atkinson Hyperlegible, Space Grotesk, and Dela Gothic One Latin fonts
+are bundled with their licenses in `src/assets/fonts` and loaded through
+`src/lib/fonts.ts`. Local and production builds do not need Google Fonts downloads.
+
 ---
 
 ## ✨ Features
@@ -17,11 +21,40 @@
 - **Photo detail pages** – Every photo has its own page (`/photo/[id]`).
 - **Photographer profiles** – View all works by a photographer (`/photographer/[username]`).
 - **Upload dashboard** – Registered users upload their work at `/dashboard/upload`.
+- **Copyright watermark (encrypted, invisible)** – On upload, an owner passphrase (8–128 chars, required while the watermark toggle is on) derives an AES-256-GCM key via PBKDF2-HMAC-SHA256 (100k iterations). A copyright certificate (photo ID, photographer, license, timestamp, normalized image hash, optional ≤512-byte text payload) is encrypted and embedded into mid-frequency DCT coefficients of the original, archived as lossless PNG. The passphrase is never stored. Opting out keeps the legacy raw-file path.
+- **Hidden watermark explanation** – Public `/about/hidden-watermark` explains the real feature: how embedding works, payload choices, opt-out risks, and measured limitations. Upload links open it in a new tab to preserve form state; the risk link points directly to `#risiko`.
+- **Real extraction & public verification** – Authenticated `/dashboard/extract` and public `/verify` extract the DCT packet and decrypt the certificate server-side; wrong passphrases or tampered images are rejected by the GCM authentication tag. `RealExtractForm` injects the `/api/photos/verify` adapter into the reusable `ExtractForm`. Downloads captioned `padustock demo` still receive photo/uploader reference IDs in their filenames (kept from the demo branch).
 - **AI-assisted captions** – Google Gemini helps generate photo descriptions, with the option to write captions and tags manually.
 - **Image & EXIF handling** – Server-side processing with `sharp` and `piexifjs`.
 - **50 MB photo uploads, including HEIC/HEIF** – Files upload directly to Supabase; HEIC is decoded on the server and shown as a JPEG preview. Original downloads preserve the uploaded format.
 - **Authentication** – Register / log in with Supabase Auth; `/dashboard/*` is protected by middleware.
 - **Automatic licensing** – Published photos without purchase links use [CC BY-NC-ND 4.0](https://creativecommons.org/licenses/by-nc-nd/4.0/). External listings direct visitors to the provider's applicable licensing process; a preview does not itself grant general reuse permission. Valid prior CC grants continue after link/status changes.
+
+## Copyright watermark (real engine)
+
+This branch merges the `capstoneDemo` UI with the real cryptography + DCT engine
+(`feature/watermark-copyright-protection`). The filename-driven simulation now
+lives only on the `capstoneDemo` branch; `src/lib/demo-extraction.ts` is kept as
+legacy reference and is not imported by the app here.
+
+Run `npm run dev`, sign in, and open `/dashboard/upload`:
+
+1. Pick a photo, write captions (manual or AI), optionally edit the ≤512-byte
+   text payload under “Edit watermark (opsional)”.
+2. Enter the owner passphrase (8–128 chars). It is sent only to the draft route,
+   never stored or logged.
+3. On save, the server builds the certificate, encrypts it (AES-256-GCM, AAD =
+   protocol string), embeds the packet into DCT coefficients (α = 25, luminance
+   mid-frequency pair), and archives the original as lossless PNG.
+4. Prove ownership at public `/verify` (no login) or `/dashboard/extract`:
+   upload the disputed image + passphrase. Correct key → certificate + hash
+   status; wrong key or tampering → “Authentication Error (Invalid Tag)”;
+   no packet → “not detected”. JPEG Q70–90 recompression still recovers the
+   certificate (BER 0% measured); hash mismatch is shown as a warning.
+
+Opting out (“Nonaktifkan watermark”) skips embedding entirely and keeps the
+legacy raw-file move. Measured demo numbers: PSNR 46.12 dB, 667-byte packet.
+Regenerate UI test fixtures with `node tests/ui/make-watermark-fixture.cjs`.
 
 ## 🧰 Tech Stack
 
@@ -44,9 +77,12 @@
 | `/photo/[id]` | Photo detail page | Public |
 | `/photographer/[username]` | Photographer profile and works | Public |
 | `/about` | About the community | Public |
+| `/about/hidden-watermark` | Hidden watermark preparation, opt-out consequences and limitations | Public |
 | `/terms`, `/privacy` | Terms & Conditions, Privacy Policy | Public |
 | `/login`, `/register` | Authentication | Logged-out only |
 | `/dashboard/*` | Dashboard, including `/dashboard/upload` | Logged-in only |
+| `/dashboard/extract` | Real DCT extraction + AES-256-GCM decryption with the owner's passphrase | Logged-in only |
+| `/verify` | Public copyright verification: disputed photo + passphrase → certificate & hash status | Public |
 
 Access rules are enforced in `middleware.ts`, which also refreshes Supabase sessions. Unauthenticated users are redirected to `/login`, and logged-in users are redirected from `/login` and `/register` to `/dashboard`.
 
@@ -158,11 +194,18 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 | `npm run start` | Run the production build |
 | `npm run lint` | Lint the codebase with ESLint |
 | `npm test` | Run local security, upload lifecycle, and image processing regression tests |
-| `npm run test:ui` | Review the real pages with local Supabase fixtures at mobile/desktop widths |
+| `npm run test:ui` | Review real pages and watermark frontend states with local fixtures at mobile/desktop widths |
 
 For an additional real HEIC decoder check, set `HEIC_TEST_FILE` to a local HEIC
 file before running `npm test`. Normal tests generate their own JPEG fixtures
 and use mocked Supabase/Gemini services; they do not modify a deployed project.
+Browser tests also start a separate Next app from `tests/ui/fixture-app` on
+`127.0.0.1:3101` to exercise the extraction callback, including explicitly labeled
+controlled success and failure responses. This component harness is outside the
+production route tree. The main app and Supabase fixtures use ports 3100 and 54321.
+New frontend checks include UTF-8 payload limits, manual/AI retries with unchanged
+API bodies, extraction result states, clipboard errors, stale results, and blob URL
+cleanup. Responsive extraction checks also cover 320, 375, 414, and 768 px widths.
 Licensing migration tests also execute SQL triggers, roles, and RLS in an isolated
 PGlite PostgreSQL engine. Its minimal public-view fixture is explicitly test-only,
 not a reconstruction of the deployed view. It does not test live Supabase JWTs or

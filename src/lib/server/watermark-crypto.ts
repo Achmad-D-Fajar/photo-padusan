@@ -32,6 +32,8 @@ export interface CopyrightCertificate {
   image_hash: string;
   server_signature: string;
   site_origin: string;
+  // Payload teks bebas dari form unggah (maks. 512 byte UTF-8), opsional.
+  reference_payload?: string;
 }
 
 export interface CertificateInput {
@@ -40,10 +42,13 @@ export interface CertificateInput {
   imageHash: string;
   creationTimestamp?: string;
   siteOrigin?: string;
+  referencePayload?: string;
 }
 
+export const MAX_REFERENCE_PAYLOAD_BYTES = 512;
+
 export function buildCertificate(input: CertificateInput): CopyrightCertificate {
-  return {
+  const cert: CopyrightCertificate = {
     protocol: WATERMARK_PROTOCOL,
     photo_id: input.photoId,
     photographer: input.photographer,
@@ -53,6 +58,8 @@ export function buildCertificate(input: CertificateInput): CopyrightCertificate 
     server_signature: "PADUSTOCK-OFFICIAL-VERIFIED",
     site_origin: input.siteOrigin ?? "https://padustock.vercel.app",
   };
+  if (input.referencePayload) cert.reference_payload = input.referencePayload;
+  return cert;
 }
 
 export function validateCertificate(value: unknown): CopyrightCertificate {
@@ -66,6 +73,12 @@ export function validateCertificate(value: unknown): CopyrightCertificate {
   }
   if (typeof cert.image_hash !== "string" || !/^[0-9a-f]{64}$/.test(cert.image_hash)) {
     throw new WatermarkCryptoError("Sertifikat tidak valid: image_hash bukan SHA-256 heksadesimal.");
+  }
+  if ("reference_payload" in cert) {
+    const payload = cert.reference_payload;
+    if (typeof payload !== "string" || payload.length === 0 || Buffer.byteLength(payload, "utf8") > MAX_REFERENCE_PAYLOAD_BYTES) {
+      throw new WatermarkCryptoError("Sertifikat tidak valid: reference_payload rusak atau melebihi 512 byte.");
+    }
   }
   return cert as unknown as CopyrightCertificate;
 }

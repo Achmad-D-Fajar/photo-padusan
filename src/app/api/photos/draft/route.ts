@@ -43,6 +43,10 @@ export async function POST(request: NextRequest) {
       if (passphrase && (passphrase.length < 8 || passphrase.length > 128)) {
         throw new ApiError(400, "Passphrase watermark harus sepanjang 8–128 karakter.");
       }
+      const referencePayload = typeof body.watermark_payload === "string" ? body.watermark_payload : "";
+      if (Buffer.byteLength(referencePayload, "utf8") > 512) {
+        throw new ApiError(400, "Payload watermark maksimal 512 byte UTF-8.");
+      }
       const rawBuffer = await readStagedPhoto(supabase, user.id, path);
       // Validate and decode before creating permanent storage objects.
       const { watermarkedBuffer } = await processImageForStorage(rawBuffer);
@@ -67,6 +71,7 @@ export async function POST(request: NextRequest) {
           wm = await embedCopyrightWatermark(rawBuffer, {
             photoId, photographer: artist,
             siteOrigin: process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") ?? "https://padustock.vercel.app",
+            referencePayload: referencePayload || undefined,
           }, passphrase);
         } catch (error) {
           if (error instanceof CapacityExceededError) throw new ApiError(422, error.message);

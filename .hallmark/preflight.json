@@ -1,0 +1,8 @@
+{
+  "date": "2026-11-18",
+  "framework": "Next.js 16 App Router, React 19, Tailwind 4 and daisyUI 5",
+  "fonts": "Space Grotesk display, Atkinson Hyperlegible content, Dela Gothic One logo (src/app/layout.tsx)",
+  "palette": "Existing Padustock light gray, black borders, green and blue accents (src/app/globals.css and UploadForm.tsx)",
+  "motion": "No motion dependencies; new controls use immediate state changes",
+  "scope": "Preserve current brand, navigation and footer; additive frontend only"
+}

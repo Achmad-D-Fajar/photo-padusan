@@ -12,6 +12,7 @@ interface VerifyCertificate {
   image_hash: string;
   server_signature: string;
   site_origin: string;
+  reference_payload?: string;
 }
 
 interface VerifyData {
@@ -124,6 +125,7 @@ export default function VerifyForm() {
                 ["Penanda Server", result.certificate.server_signature],
                 ["Protokol", result.certificate.protocol],
                 ["Ukuran Paket", `${result.packetBytes} byte (${result.width}×${result.height} px)`],
+                ...(result.certificate.reference_payload ? [["Payload Referensi", result.certificate.reference_payload] as [string, string]] : []),
               ] as [string, string][]).map(([label, value]) => (
                 <div key={label} className="bg-[#E5E5E5] border-4 border-[#111111] p-4 shadow-[4px_4px_0px_#111111]">
                   <dt className="font-bold uppercase text-sm tracking-wide">{label}</dt>

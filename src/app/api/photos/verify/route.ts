@@ -28,7 +28,11 @@ export async function POST(request: NextRequest) {
       const result = await verifyImageWatermark(buffer, passphrase);
       return NextResponse.json({ success: true, data: result });
     } catch (error) {
-      if (error instanceof WatermarkNotFoundError) throw new ApiError(422, error.message);
+      // Kode eksplisit agar klien bisa membedakan "tidak ada watermark" dari
+      // "kunci salah/data dimanipulasi" tanpa mencocokkan teks pesan.
+      if (error instanceof WatermarkNotFoundError) {
+        return NextResponse.json({ success: false, code: "not-found", error: error.message }, { status: 422 });
+      }
       if (error instanceof WatermarkCryptoError) throw new ApiError(422, error.message);
       throw error;
     }

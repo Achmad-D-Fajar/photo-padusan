@@ -1,13 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import LogoutButton from "@/components/layouts/LogoutButton";
-import { Dela_Gothic_One } from "next/font/google";
-
-const delaGothic = Dela_Gothic_One({
-  weight: "400",
-  subsets: ["latin"],
-  display: "swap",
-});
+import { delaGothic } from "@/lib/fonts";
 
 function getInitial(label: string): string {
   const trimmed = label.trim();
@@ -62,17 +56,20 @@ export default async function Navbar() {
     <div className="navbar bg-white border-b-4 border-[#111111] px-2 sm:px-8 shadow-[0px_4px_0px_#111111] sticky top-0 z-50">
       <div className="navbar-start gap-1 sm:gap-2">
         <div className="dropdown lg:hidden">
-          <div tabIndex={0} role="button" className="btn btn-sm sm:btn-md bg-white border-2 border-[#111111] rounded-none shadow-[2px_2px_0px_#111111] hover:bg-[#E5E5E5] h-9 min-h-0 px-2" aria-label="Buka menu navigasi">
+          <button type="button" className="btn btn-sm sm:btn-md bg-white border-2 border-[#111111] rounded-none shadow-[2px_2px_0px_#111111] hover:bg-[#E5E5E5] h-11 min-h-0 px-2" aria-label="Buka menu navigasi">
             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-[#111111]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M4 6h16M4 12h16M4 18h16" />
             </svg>
-          </div>
+          </button>
           <ul tabIndex={0} className="menu menu-lg dropdown-content bg-white rounded-none z-20 mt-4 w-64 p-4 border-4 border-[#111111] shadow-[8px_8px_0px_#111111] gap-2">
             <li><Link href="/" className={navLinkClass}>Photos</Link></li>
             <li><Link href="/about" className={navLinkClass}>About</Link></li>
             <li><Link href="/verify" className={navLinkClass}>Verifikasi</Link></li>
             {user ? (
-              <li><Link href="/dashboard/upload" className={navLinkClass}>Upload</Link></li>
+              <>
+                <li><Link href="/dashboard/upload" className={navLinkClass}>Upload</Link></li>
+                <li><Link href="/dashboard/extract" className={navLinkClass}>Ekstraksi</Link></li>
+              </>
             ) : (
               <>
                 {/* Tautan navigasi internal menu hamburger untuk perangkat mobile */}
@@ -98,6 +95,7 @@ export default async function Navbar() {
           <li><Link href="/about" className={navLinkClass}>About</Link></li>
           <li><Link href="/verify" className={navLinkClass}>Verifikasi</Link></li>
           {user && <li><Link href="/dashboard/upload" className={navLinkClass}>Upload</Link></li>}
+          {user && <li><Link href="/dashboard/extract" className={navLinkClass}>Ekstraksi</Link></li>}
         </ul>
       </div>
 
