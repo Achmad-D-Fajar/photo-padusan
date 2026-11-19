@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { DEFAULT_WATERMARK_PAYLOAD } from "../../src/lib/watermark-payload";
 
 const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j8ioAAAAASUVORK5CYII=", "base64");
 const image = { name: "padusan.png", mimeType: "image/png", buffer: png };
@@ -130,7 +131,8 @@ test("upload payload persists across workflows and retries without entering API 
   await page.goto("/dashboard/upload");
   const section = page.getByRole("region", { name: "Pengaturan watermark tersembunyi" });
   await expect(section.locator("details")).not.toHaveAttribute("open");
-  await expect(section).toContainText("PADUSTOCK-IWM-DEMO-v1");
+  await expect(section).not.toContainText(DEFAULT_WATERMARK_PAYLOAD);
+  await expect(section).toContainText("watermark bawaan akan digunakan");
   await expect(section.getByRole("link", { name: "hidden watermark", exact: true })).toHaveAttribute("href", "/about/hidden-watermark");
   expect(await section.evaluate(node => node.nextElementSibling?.tagName)).toBe("BUTTON");
   await section.getByText("Edit watermark (opsional)", { exact: true }).click();
@@ -148,7 +150,7 @@ test("upload payload persists across workflows and retries without entering API 
   })).toEqual([255, 255, 255, 255]);
   await expect(optOut).toHaveCSS("font-size", "14px");
   const field = section.getByLabel("Teks payload");
-  await expect(section).toContainText("PADUSTOCK-IWM-DEMO-v1");
+  await expect(section).not.toContainText(DEFAULT_WATERMARK_PAYLOAD);
   await field.fill("🌿".repeat(129));
   await expect(field).toHaveAttribute("aria-invalid", "true");
   await expect(field).toHaveValue("🌿".repeat(129));

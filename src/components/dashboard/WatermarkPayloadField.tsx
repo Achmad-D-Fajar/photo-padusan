@@ -2,7 +2,7 @@
 
 import { useId } from "react";
 import Link from "next/link";
-import { DEFAULT_WATERMARK_PAYLOAD, MAX_WATERMARK_PAYLOAD_BYTES, watermarkPayload } from "@/lib/watermark-payload";
+import { MAX_WATERMARK_PAYLOAD_BYTES, watermarkPayload } from "@/lib/watermark-payload";
 
 export default function WatermarkPayloadField({ value, onChange, enabled, onEnabledChange, disabled = false }: {
   value: string;
@@ -20,7 +20,7 @@ export default function WatermarkPayloadField({ value, onChange, enabled, onEnab
       <p>
         {enabled ? <>
           <Link href="/about/hidden-watermark" target="_blank" rel="noopener noreferrer" className="watermark-link">hidden watermark</Link>
-          {usesDefault ? <> akan diterapkan. Jika tidak diedit atau dinonaktifkan, watermark bawaan <code>{DEFAULT_WATERMARK_PAYLOAD}</code> akan digunakan.</> : " dengan payload khusus akan diterapkan."}
+          {usesDefault ? " akan diterapkan. Jika tidak diedit atau dinonaktifkan, watermark bawaan akan digunakan." : " dengan payload khusus akan diterapkan."}
         </> : <>
           <Link href="/about/hidden-watermark" target="_blank" rel="noopener noreferrer" className="watermark-link">Hidden watermark</Link> dinonaktifkan dalam persiapan unggahan ini.
         </>}
@@ -38,7 +38,7 @@ export default function WatermarkPayloadField({ value, onChange, enabled, onEnab
           <p id={`${id}-help`} className={enabled && !valid ? "watermark-error" : undefined}>
             {!enabled ? "Teks tetap tersedia jika Anda mengaktifkan kembali pilihan ini."
               : !valid ? "Payload melebihi 512 byte. Kurangi teks untuk melanjutkan; teks tidak dipotong otomatis."
-              : usesDefault ? <>Kosong atau hanya spasi memakai <code>{DEFAULT_WATERMARK_PAYLOAD}</code>. Penghitung menampilkan ukuran payload bawaan.</>
+              : usesDefault ? "Jika kosong atau hanya berisi spasi, watermark bawaan akan digunakan. Penghitung menampilkan ukuran payload bawaan."
                 : "Teks, spasi, dan baris baru dipertahankan persis. Emoji dapat memakai lebih dari satu byte."}
           </p>
           <div className="watermark-opt-out">

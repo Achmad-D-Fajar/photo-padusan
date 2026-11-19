@@ -1,13 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import LogoutButton from "@/components/layouts/LogoutButton";
-import { Dela_Gothic_One } from "next/font/google";
-
-const delaGothic = Dela_Gothic_One({
-  weight: "400",
-  subsets: ["latin"],
-  display: "swap",
-});
+import { delaGothic } from "@/lib/fonts";
 
 function getInitial(label: string): string {
   const trimmed = label.trim();

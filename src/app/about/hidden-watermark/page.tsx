@@ -43,7 +43,7 @@ export default function HiddenWatermarkPage() {
       </section>
       <section id="informasi">
         <h2>Informasi apa yang disisipkan?</h2>
-        <p><strong>Belum ada informasi yang disisipkan.</strong> Formulir menyiapkan satu teks payload, maksimal {MAX_WATERMARK_PAYLOAD_BYTES} byte UTF-8. Jika teks kosong atau hanya spasi, nilai bawaannya adalah <code>{DEFAULT_WATERMARK_PAYLOAD}</code>. Nilai ini merupakan penanda demo bersama, bukan identitas unik foto atau bukti siapa pemiliknya.</p>
+        <p><strong>Belum ada informasi yang disisipkan.</strong> Formulir menyiapkan satu teks payload, maksimal {MAX_WATERMARK_PAYLOAD_BYTES} byte UTF-8. Jika teks kosong atau hanya spasi, nilai bawaannya adalah <code>{DEFAULT_WATERMARK_PAYLOAD}</code>. Nilai ini merupakan penanda bawaan bersama, bukan identitas unik foto atau bukti siapa pemiliknya.</p>
         <p>Teks lain, termasuk spasi dan baris baru, dipertahankan persis. Daftar informasi yang benar-benar disisipkan baru dapat dijelaskan setelah integrasi ditetapkan; saat ini tidak ada ID foto, identitas fotografer, atau tautan sumber yang otomatis ditambahkan ke payload ini.</p>
         <p>Jangan masukkan password, kontak pribadi yang tidak ingin dibagikan, atau informasi rahasia. Tersembunyi tidak berarti privat atau terenkripsi: setelah penyisipan tersedia, orang yang memiliki salinan gambar dan alat yang sesuai mungkin dapat membaca informasi yang berhasil dipulihkan. Akses ekstraksi Padustock direncanakan melalui akun yang masuk.</p>
       </section>
@@ -54,7 +54,7 @@ export default function HiddenWatermarkPage() {
         <p>Untuk saat ini, pilihan hanya bertahan selama Anda berada di formulir tersebut dan tidak ikut tersimpan bersama foto. Setelah fitur dihubungkan, cakupan yang dimaksud adalah pratinjau yang dibuat dari unggahan itu.</p>
         <h3>Membaca kembali informasi</h3>
         <p>Masuk ke akun, buka <Link href="/dashboard/extract">halaman ekstraksi</Link>, dan pilih gambar. Saat ini Anda dapat meninjau file, tetapi tombol ekstraksi tetap nonaktif karena layanannya belum terhubung.</p>
-        <p>Ketika tersedia kelak, hasil berhasil berarti ada informasi yang dapat ditampilkan untuk Anda periksa. Hasil “tidak terdeteksi” berarti proses tersebut tidak berhasil membaca informasi; itu tidak membuktikan bahwa gambar tidak pernah memiliki watermark. Antarmuka berhasil dan gagal saat ini hanya diuji lewat fixture lokal yang diberi label simulasi.</p>
+        <p>Ketika tersedia kelak, hasil berhasil berarti ada informasi yang dapat ditampilkan untuk Anda periksa. Hasil “tidak terdeteksi” berarti proses tersebut tidak berhasil membaca informasi; itu tidak membuktikan bahwa gambar tidak pernah memiliki watermark.</p>
       </section>
       <section id="risiko">
         <h2>Apa akibatnya jika saya menonaktifkan?</h2>

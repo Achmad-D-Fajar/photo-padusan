@@ -27,7 +27,8 @@ test("compact watermark settings expose the default, explanation and opt-out lin
   const { default: Field } = loadTs("src/components/dashboard/WatermarkPayloadField.tsx");
   const render = enabled => renderToStaticMarkup(React.createElement(Field, { value: "", enabled, onChange() {}, onEnabledChange() {} }));
   const output = render(true);
-  assert.ok(output.indexOf(DEFAULT_WATERMARK_PAYLOAD) < output.indexOf("<details"));
+  assert.ok(!output.includes(DEFAULT_WATERMARK_PAYLOAD));
+  assert.match(output, /watermark bawaan akan digunakan/);
   assert.match(output, /Edit watermark \(opsional\)/);
   assert.match(output, /rows="2"/);
   assert.match(output, /href="\/about\/hidden-watermark"/);

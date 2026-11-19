@@ -16,7 +16,7 @@ export default function ExtractionFixture() {
     return { payload, byteLength: mode === "invalid" ? 999 : new TextEncoder().encode(payload).byteLength };
   }, [mode]);
   return <>
-    <h1>Fixture lokal — hasil simulasi pengujian</h1>
+    <h1>Pengujian komponen ekstraksi</h1>
     <label htmlFor="fixture-mode">Mode fixture</label>
     <select id="fixture-mode" value={mode} onChange={event => setMode(event.target.value)}>
       {["success", "error", "invalid", "delayed", "unavailable"].map(value => <option key={value}>{value}</option>)}

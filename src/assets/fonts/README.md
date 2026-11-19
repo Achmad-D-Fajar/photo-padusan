@@ -1,0 +1,1 @@
+Padustock loads these Latin subsets of Atkinson Hyperlegible, Space Grotesk, and Dela Gothic One through next/font/local. The files are the same fonts previously served by Google Fonts; their original SIL Open Font Licenses are included beside them. Builds do not need font downloads. Characters outside these subsets use the existing browser fallback.

@@ -11,6 +11,9 @@ is named `photo-padusan`; the npm package is named `paduphoto`.
 
 - Use the existing Next.js App Router, React, strict TypeScript, Tailwind CSS,
   and daisyUI patterns. Use npm and keep `package-lock.json` with dependency changes.
+- Load shared fonts from `src/lib/fonts.ts` with `next/font/local`. Keep the Latin
+  font files and their licenses in `src/assets/fonts` so builds do not depend on
+  remote font downloads. Preserve the stylesheet's existing font variables.
 - Keep interface messages in Indonesian. Preserve the separate Indonesian and
   English caption/tag fields (`caption_id`, `caption_en`, `tags_id`, `tags_en`).
 - `src/app`: pages, route handlers, auth actions, and intercepted photo modals.
@@ -122,7 +125,7 @@ npm run build
 ## Watermark frontend
 
 - Watermark payload preparation is client-only: `watermark-payload.ts` resolves
-  blank text to `PADUSTOCK-IWM-DEMO-v1` and enforces 512 UTF-8 bytes without
+  blank text to `PADUSTOCK-IWM-v1` and enforces 512 UTF-8 bytes without
   truncation. Do not add the field to upload, analysis, translation, or save APIs.
 - Keep the compact watermark disclosure immediately above upload/review actions.
   Default information stays outside it; payload and opt-out state survive AI
@@ -132,8 +135,8 @@ npm run build
   Keep future preview-only scope distinct from current unconnected behavior.
 - `/dashboard/extract` authenticates on the server and renders `ExtractForm`
   without an extractor. Its optional client callback is the integration boundary;
-  production must show unavailable until a real adapter is authorized. Simulated
-  success belongs only in `tests/ui/fixture-app`, a separate local Next app.
+  production must show unavailable until a real adapter is authorized. Controlled
+  test responses belong only in `tests/ui/fixture-app`, a local component harness.
   No payload embedding, encryption, backend extraction, or download changes are
   implemented by this frontend. Preserve existing visible preview watermarking.
 

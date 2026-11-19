@@ -1,12 +1,6 @@
 import Link from "next/link";
-import { Dela_Gothic_One } from "next/font/google";
+import { delaGothic } from "@/lib/fonts";
 import { CC_LICENSE_URL } from "@/lib/legal-documents";
-
-const delaGothic = Dela_Gothic_One({
-  weight: "400",
-  subsets: ["latin"],
-  display: "swap",
-});
 
 export default function Footer() {
   const currentYear = new Date().getFullYear();
