@@ -19,21 +19,19 @@ export default function WatermarkPayloadField({ value, onChange, enabled, onEnab
     <section className="watermark-settings" aria-label="Pengaturan watermark tersembunyi">
       <p>
         {enabled ? <>
-          {usesDefault ? "Jika tidak diubah, " : "Pilihan saat ini: "}
           <Link href="/about/hidden-watermark" target="_blank" rel="noopener noreferrer" className="watermark-link">hidden watermark</Link>
-          {usesDefault ? <> bawaan dengan payload <code>{DEFAULT_WATERMARK_PAYLOAD}</code> akan digunakan saat fitur dihubungkan.</> : " dengan payload khusus akan digunakan saat fitur dihubungkan."}
+          {usesDefault ? <> akan diterapkan. Jika tidak diedit atau dinonaktifkan, watermark bawaan <code>{DEFAULT_WATERMARK_PAYLOAD}</code> akan digunakan.</> : " dengan payload khusus akan diterapkan."}
         </> : <>
           <Link href="/about/hidden-watermark" target="_blank" rel="noopener noreferrer" className="watermark-link">Hidden watermark</Link> dinonaktifkan dalam persiapan unggahan ini.
         </>}
       </p>
-      <p id={`${id}-notice`} className="watermark-settings-note">Saat ini pengaturan belum diterapkan ke gambar, dikirim, atau disimpan.</p>
       <details className="watermark-payload">
         <summary>Edit watermark (opsional)</summary>
         <div>
           <label htmlFor={id} className="watermark-label">Teks payload</label>
           <textarea id={id} value={value} onChange={event => onChange(event.target.value)}
             disabled={disabled || !enabled} rows={2} className="watermark-textarea watermark-payload-input" spellCheck={false}
-            aria-invalid={enabled && !valid} aria-describedby={`${id}-notice ${id}-counter ${id}-help`} />
+            aria-invalid={enabled && !valid} aria-describedby={`${id}-counter ${id}-help`} />
           <p id={`${id}-counter`} className={valid || !enabled ? "watermark-counter" : "watermark-error"} aria-live="polite">
             UTF-8: {byteLength} / {MAX_WATERMARK_PAYLOAD_BYTES} byte
           </p>
@@ -44,11 +42,11 @@ export default function WatermarkPayloadField({ value, onChange, enabled, onEnab
                 : "Teks, spasi, dan baris baru dipertahankan persis. Emoji dapat memakai lebih dari satu byte."}
           </p>
           <div className="watermark-opt-out">
-            <button type="button" className="watermark-button"
+            <button type="button" className="watermark-button watermark-button-opt-out"
               disabled={disabled} onClick={() => onEnabledChange(!enabled)} aria-describedby={`${id}-risk`}>
               {enabled ? "Nonaktifkan watermark" : "Aktifkan kembali"}
             </button>
-            <p id={`${id}-risk`}><Link href="/about/hidden-watermark#risiko" target="_blank" rel="noopener noreferrer" className="watermark-link">Saya memahami risikonya</Link>: pilihan ini hanya untuk pratinjau dari unggahan ini, saat fitur tersedia. Lisensi dan hak Anda tetap terpisah.</p>
+            <p id={`${id}-risk`}><Link href="/about/hidden-watermark#risiko" target="_blank" rel="noopener noreferrer" className="watermark-link">resiko menonaktifkan</Link></p>
           </div>
           <p role="status" className="watermark-settings-note">{!enabled ? "Pilihan nonaktif hanya tersimpan sementara di halaman ini." : ""}</p>
         </div>

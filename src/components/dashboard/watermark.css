@@ -8,12 +8,12 @@
 .watermark-stack, .watermark-result { display: flex; flex-direction: column; gap: var(--space-watermark-lg); }
 .watermark-panel h2 { font-family: var(--font-display); font-size: 1.5rem; font-weight: 700; text-transform: uppercase; }
 .watermark-label, .watermark-file-info dt { display: block; font-weight: 700; margin-bottom: var(--space-watermark-sm); }
-.watermark-settings { min-width: 0; overflow-wrap: anywhere; font-size: 1rem; }
+.watermark-settings { min-width: 0; overflow-wrap: anywhere; font-size: 1rem; border: 2px solid var(--color-watermark-ink); padding: var(--space-watermark-md); background: var(--color-watermark-paper); color: var(--color-watermark-ink); }
 .watermark-settings-note { font-size: 0.875rem; margin-block: var(--space-watermark-sm); }
-.watermark-link { text-decoration: underline; text-underline-offset: 3px; }
+.watermark-link { color: var(--color-watermark-link); text-decoration: underline; text-underline-offset: 3px; }
 .watermark-link:focus-visible { outline: 3px solid var(--color-watermark-ink) !important; outline-offset: 3px; }
 .watermark-payload { margin-top: var(--space-watermark-sm); }
-.watermark-payload summary { display: list-item; width: fit-content; max-width: 100%; font-family: var(--font-display); font-size: 0.875rem; font-weight: 700; cursor: pointer; min-height: 44px; padding: var(--space-watermark-sm) var(--space-watermark-md); border: 2px solid var(--color-watermark-ink); background: var(--color-watermark-paper); color: var(--color-watermark-ink); list-style-position: inside; }
+.watermark-payload summary { display: list-item; width: fit-content; max-width: 100%; font-family: var(--font-display); font-size: 0.875rem; font-weight: 700; cursor: pointer; min-height: 44px; padding-block: var(--space-watermark-sm); list-style-position: inside; }
 .watermark-payload[open] summary { margin-bottom: var(--space-watermark-md); }
 .watermark-payload summary:focus-visible { outline: 3px solid var(--color-watermark-ink) !important; outline-offset: 3px; box-shadow: none !important; }
 .watermark-textarea { width: 100%; min-width: 0; min-height: 8rem; resize: vertical; padding: var(--space-watermark-md); border: 2px solid var(--color-watermark-ink); border-radius: 0; background: var(--color-watermark-paper); color: var(--color-watermark-ink); font: inherit; }
@@ -40,6 +40,7 @@
 .watermark-actions { display: flex; flex-wrap: wrap; gap: var(--space-watermark-md); }
 .watermark-button { display: inline-flex; justify-content: center; align-items: center; min-height: 48px; padding: var(--space-watermark-sm) var(--space-watermark-md); border: 2px solid var(--color-watermark-ink); font-weight: 700; white-space: nowrap; background: var(--color-watermark-paper); color: var(--color-watermark-ink); cursor: pointer; box-shadow: 3px 3px 0 var(--color-watermark-ink); }
 .watermark-button-primary { background: var(--color-watermark-accent); color: var(--color-watermark-accent-ink); }
+.watermark-button-opt-out { min-height: 44px; padding: 4px var(--space-watermark-sm); font-size: 0.875rem; background: var(--color-watermark-opt-out); color: var(--color-watermark-paper); box-shadow: 2px 2px 0 var(--color-watermark-ink); }
 .watermark-button:active:not(:disabled) { transform: translateY(2px); }
 .watermark-button:disabled, .watermark-textarea:disabled { opacity: 0.55; cursor: not-allowed; }
 .watermark-panel :focus-visible { outline: 3px solid var(--color-watermark-ink) !important; outline-offset: 3px; box-shadow: none !important; }

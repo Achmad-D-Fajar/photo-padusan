@@ -9,6 +9,8 @@
   --color-watermark-accent: oklch(50.1% 0.136 149.9);
   --color-watermark-accent-ink: var(--color-watermark-paper);
   --color-watermark-error: oklch(43.2% 0.147 350.3);
+  --color-watermark-opt-out: #882255;
+  --color-watermark-link: #332288;
   --space-watermark-sm: 0.5rem;
   --space-watermark-md: 1rem;
   --space-watermark-lg: 1.5rem;

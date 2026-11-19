@@ -32,7 +32,10 @@ test("compact watermark settings expose the default, explanation and opt-out lin
   assert.match(output, /rows="2"/);
   assert.match(output, /href="\/about\/hidden-watermark"/);
   assert.match(output, /href="\/about\/hidden-watermark#risiko"/);
-  assert.match(output, /belum diterapkan/);
+  assert.match(output, /akan diterapkan/);
+  assert.match(output, /resiko menonaktifkan/);
+  assert.ok(!output.includes("Saat ini pengaturan belum diterapkan"));
+  assert.ok(!output.includes("pilihan ini hanya untuk pratinjau"));
   assert.ok(!output.includes("<details open"));
   assert.match(render(false), /Teks tetap tersedia/);
   assert.match(render(false), /Aktifkan kembali/);

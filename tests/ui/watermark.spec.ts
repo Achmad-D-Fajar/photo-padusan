@@ -134,6 +134,19 @@ test("upload payload persists across workflows and retries without entering API 
   await expect(section.getByRole("link", { name: "hidden watermark", exact: true })).toHaveAttribute("href", "/about/hidden-watermark");
   expect(await section.evaluate(node => node.nextElementSibling?.tagName)).toBe("BUTTON");
   await section.getByText("Edit watermark (opsional)", { exact: true }).click();
+  await expect(section).not.toContainText("Saat ini pengaturan belum diterapkan");
+  await expect(section).not.toContainText("pilihan ini hanya untuk pratinjau");
+  await expect(section.getByRole("link", { name: "hidden watermark", exact: true })).toHaveCSS("color", "rgb(51, 34, 136)");
+  await expect(section).toHaveCSS("border-top-width", "2px");
+  const optOut = section.getByRole("button", { name: "Nonaktifkan watermark", exact: true });
+  await expect(optOut).toHaveCSS("background-color", "rgb(136, 34, 85)");
+  expect(await optOut.evaluate(button => {
+    const context = document.createElement("canvas").getContext("2d")!;
+    context.fillStyle = getComputedStyle(button).color;
+    context.fillRect(0, 0, 1, 1);
+    return Array.from(context.getImageData(0, 0, 1, 1).data);
+  })).toEqual([255, 255, 255, 255]);
+  await expect(optOut).toHaveCSS("font-size", "14px");
   const field = section.getByLabel("Teks payload");
   await expect(section).toContainText("PADUSTOCK-IWM-DEMO-v1");
   await field.fill("🌿".repeat(129));
@@ -148,7 +161,8 @@ test("upload payload persists across workflows and retries without entering API 
   await expect(field).toHaveValue(payload);
   await section.getByRole("button", { name: "Nonaktifkan watermark", exact: true }).click();
   await expect(field).toBeDisabled();
-  await expect(section.getByRole("link", { name: "Saya memahami risikonya" })).toHaveAttribute("href", "/about/hidden-watermark#risiko");
+  await expect(section.getByRole("link", { name: "resiko menonaktifkan" })).toHaveAttribute("href", "/about/hidden-watermark#risiko");
+  await expect(section.getByRole("link", { name: "resiko menonaktifkan" })).toHaveCSS("color", "rgb(51, 34, 136)");
   await page.getByRole("checkbox", { name: "Gunakan Bantuan AI" }).check();
   await expect(field).toHaveValue(payload);
   await page.getByRole("button", { name: "JALANKAN ANALISIS AI" }).click();
