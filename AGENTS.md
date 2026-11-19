@@ -132,13 +132,23 @@ npm run build
   review and retries. Opt-out is client-only, retains typed text, and bypasses
   payload validation while disabled. Explanation/risk links open the public
   `/about/hidden-watermark` page in a new tab so the form is not discarded.
-  Keep future preview-only scope distinct from current unconnected behavior.
-- `/dashboard/extract` authenticates on the server and renders `ExtractForm`
-  without an extractor. Its optional client callback is the integration boundary;
-  production must show unavailable until a real adapter is authorized. Controlled
-  test responses belong only in `tests/ui/fixture-app`, a local component harness.
-  No payload embedding, encryption, backend extraction, or download changes are
-  implemented by this frontend. Preserve existing visible preview watermarking.
+  Keep future preview-only scope distinct from the filename-driven simulation.
+- This working tree includes the authorized demo extraction variant for a
+  separate branch. `/dashboard/extract` authenticates on the server and renders
+  `DemoExtractForm`, which injects the client-only `extractDemoPayload` callback.
+  Edit sample attribution UUIDs, Wafa's display name, Lorem ipsum payload, delay,
+  and filename rules in `src/lib/demo-extraction.ts`. On `capstoneDemo`, only
+  downloads captioned `padustock demo` add photo/uploader UUIDs to their names
+  through `src/lib/demo-download.ts`; the extractor uses those filename references
+  for the scenario-1 JSON. The bare `padustock-demo-padustock` filename stem uses
+  fixed sample UUIDs. `no-watermark-padustock` returns no detection across supported
+  formats, and other names return the fixed Lorem ipsum text. Match names without
+  case and tolerate browser duplicate-download suffixes. Upload payload and opt-out
+  state do not drive these results. Keep the visible simulation notice: these results
+  do not read watermark data or prove that embedding/decryption occurred.
+  `tests/ui/fixture-app` remains a separate local component test harness.
+  No payload embedding, encryption, backend extraction, or changes to original
+  download bytes are implemented. Preserve existing visible preview watermarking.
 
 ## AI requests
 

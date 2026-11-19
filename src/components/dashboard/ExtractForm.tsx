@@ -1,13 +1,19 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { MAX_PHOTO_SIZE_MB, PHOTO_ACCEPT, validatePhotoFile } from "@/lib/photo-upload";
-import ExtractionResult, { type ExtractedPayload, type ExtractionState } from "./ExtractionResult";
+import ExtractionResult, { type ExtractionOutcome, type ExtractionState } from "./ExtractionResult";
 
-export type ExtractPayload = (file: File) => Promise<ExtractedPayload>;
+export type ExtractPayload = (file: File) => Promise<ExtractionOutcome>;
 
-// Deliberately has no production extractor. A caller may provide a real adapter later.
+const subscribeToHydration = () => () => {};
+const clientReady = () => true;
+const serverReady = () => false;
+
+// This checkout injects its clearly labeled filename-based demonstration adapter.
 export default function ExtractForm({ onExtract }: { onExtract?: ExtractPayload }) {
+  // Native file changes before hydration cannot reach React's onChange handler.
+  const interactive = useSyncExternalStore(subscribeToHydration, clientReady, serverReady);
   const input = useRef<HTMLInputElement>(null);
   const generation = useRef(0);
   const lifetime = useRef({ active: true, adapter: onExtract });
@@ -55,6 +61,11 @@ export default function ExtractForm({ onExtract }: { onExtract?: ExtractPayload 
     try {
       const result = await onExtract(file);
       if (request !== generation.current || !lifetime.current.active || lifetime.current.adapter !== onExtract) return;
+      if ("detected" in result) {
+        if (result.detected !== false) throw new Error("Hasil skenario tidak valid.");
+        setState({ kind: "not-detected" });
+        return;
+      }
       if (typeof result?.payload !== "string" || !Number.isSafeInteger(result.byteLength) ||
         result.byteLength !== new TextEncoder().encode(result.payload).byteLength) {
         throw new Error("Hasil ekstraksi tidak valid. Coba lagi atau pilih gambar lain.");
@@ -82,10 +93,10 @@ export default function ExtractForm({ onExtract }: { onExtract?: ExtractPayload 
         <h2 id="extraction-file-title">Gambar sumber</h2>
         <div>
           <label className="watermark-label" htmlFor="extraction-file">Pilih gambar (maks. {MAX_PHOTO_SIZE_MB} MB)</label>
-          <input id="extraction-file" ref={input} className="watermark-file" type="file" accept={PHOTO_ACCEPT}
+          <input id="extraction-file" ref={input} className="watermark-file" type="file" accept={PHOTO_ACCEPT} disabled={!interactive}
             aria-invalid={!!validationError} aria-describedby="extraction-file-help extraction-file-error"
             onChange={event => { const selected = event.target.files?.[0]; if (selected) selectFile(selected); }} />
-          <p id="extraction-file-help">JPEG, PNG, WebP, GIF, TIFF, AVIF, HEIC/HEIF. File tetap di browser sampai layanan ekstraksi dihubungkan.</p>
+          <p id="extraction-file-help">JPEG, PNG, WebP, GIF, TIFF, AVIF, HEIC/HEIF. File tetap di browser; hasil simulasi ditentukan oleh nama file.</p>
           <p id="extraction-file-error" role="alert" className="watermark-error">{validationError}</p>
         </div>
         {file ? <>

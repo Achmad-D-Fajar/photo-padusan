@@ -4,6 +4,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { extractStoragePath } from "@/lib/storage";
 import { ApiError, apiErrorResponse } from "@/lib/server/api-error";
 import { externalLicenseLink } from "@/lib/photo-licensing";
+import { demoDownloadFilename } from "@/lib/demo-download";
 
 export const runtime = "nodejs";
 
@@ -32,7 +33,9 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
       .normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 60);
     // Storage serves the file directly, including 50 MB originals and HEIC,
     // without buffering it through a Vercel function's response body.
-    const { data, error: signingError } = await admin.storage.from(bucket).createSignedUrl(path, 60, { download: `${caption}-padustock.${extension}` });
+    const { data, error: signingError } = await admin.storage.from(bucket).createSignedUrl(path, 60, {
+      download: demoDownloadFilename(caption, extension, id, photo.user_id!),
+    });
     if (signingError || !data) throw new ApiError(502, "Gagal menyiapkan unduhan.");
     const response = NextResponse.redirect(data.signedUrl);
     response.headers.set("Cache-Control", "no-store");
