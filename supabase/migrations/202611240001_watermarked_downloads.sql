@@ -1,7 +1,16 @@
--- Apply before deploying watermarked full-resolution free-download copies.
+-- Apply before backfilling and deploying watermarked full-resolution free-download copies.
 -- Keeps uploaded source originals private and stores separate full-resolution
 -- watermarked JPEG download copies in the private `photo-downloads` bucket.
+-- Adds nullable per-photo `watermark_enabled` (NULL = unknown legacy preference,
+-- never treated as consent) and `download_watermark_version` (non-secret marker
+-- for repeatable regeneration; payloads themselves remain strictly transient).
 -- Does not alter `vw_public_photos` or existing `photo_license_history` triggers/RLS.
+--
+-- Required cutover order:
+--   1. Apply this migration.
+--   2. Run `scripts/backfill-photo-downloads.mjs` (dry-run, then `--apply` only for
+--      eligible authorized photos) before deploying the download-route cutover.
+--   3. Deploy the updated application serving free downloads solely from `photo-downloads`.
 
 update storage.buckets
 set public = false
@@ -24,4 +33,6 @@ create policy "photo download delete own" on storage.objects for delete to authe
 using (bucket_id = 'photo-downloads' and (storage.foldername(name))[1] = (select auth.uid())::text);
 
 alter table public.photos
-  add column if not exists download_url text;
+  add column if not exists download_url text,
+  add column if not exists watermark_enabled boolean,
+  add column if not exists download_watermark_version text;

@@ -201,8 +201,25 @@ test("Step 5: saved preview output from /api/photos/draft recovers exact bytes v
       const insertedRows = [];
       const stagedCopy = Buffer.from(originalBytes);
 
+      const { LEGAL_DOCUMENTS } = loadTs("src/lib/legal-documents.ts");
       const supabase = {
-        auth: { getUser: async () => ({ data: { user: { id: userId } }, error: null }) },
+        auth: {
+          getUser: async () => ({
+            data: {
+              user: {
+                id: userId,
+                app_metadata: {
+                  legal_acknowledgment: {
+                    terms_version: LEGAL_DOCUMENTS.terms.version,
+                    privacy_version: LEGAL_DOCUMENTS.privacy.version,
+                    accepted_at: "2026-11-24T00:00:00Z",
+                  },
+                },
+              },
+            },
+            error: null,
+          }),
+        },
         from: table => ({
           select() { return this; },
           eq() { return this; },
@@ -260,8 +277,15 @@ test("Step 5: saved preview output from /api/photos/draft recovers exact bytes v
       // Private source original moved to `originals` bucket must remain byte-identical
       assert.deepEqual(movedOriginals[0].bytes, originalSnapshot);
 
-      // Payload must stay transient — never persisted in the photos DB row
-      assert.equal(Object.keys(insertedRows[0]).some(k => /watermark|payload/i.test(k)), false);
+      // Payload text must stay transient — never persisted in the photos DB row
+      // (only boolean watermark_enabled and non-secret download_watermark_version are stored)
+      assert.equal(Object.keys(insertedRows[0]).some(k => /payload/i.test(k)), false);
+      assert.equal(insertedRows[0].watermark_enabled, bodyFields.watermark_enabled !== false);
+      const serializedRow = JSON.stringify(insertedRows[0]);
+      assert.ok(!serializedRow.includes("PADUSTOCK-IWM-v1"));
+      if (typeof bodyFields.watermark_payload === "string" && bodyFields.watermark_payload.trim()) {
+        assert.ok(!serializedRow.includes(bodyFields.watermark_payload.trim()));
+      }
 
       const previewFile = path.join(tempDir, `${prefix}-preview.jpg`);
       fs.writeFileSync(previewFile, uploadedThumbnails[0].buffer);

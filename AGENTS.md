@@ -156,6 +156,54 @@ byte-identical free-download instructions:
     or publishing. If any required output fails or lacks capacity, reject the
     save explicitly (`400`/`422`) and clean up staged and attempted objects with
     no partial files or published database row left behind.
+  - **Per-photo opt-out persistence, edits, legacy confirmation, and backfill**:
+    `photos.watermark_enabled` (nullable boolean; `NULL` = unknown on legacy rows,
+    never treated as consent or `"yes"`) and `photos.download_watermark_version`
+    (non-secret version marker such as `iwm-v1-placeholder` or `none` so
+    placeholder copies can be regenerated once encrypted payloads are integrated)
+    are stored on `photos`; payload text itself stays strictly transient and is
+    never stored or logged. `EditPhotoForm` routes draft/publish edits through
+    authenticated `PATCH /api/photos/[id]` (keeping `"/api/photos/[id]"` in
+    `next.config.ts` `outputFileTracingIncludes`) so draft/external→free
+    transitions generate and verify `photo-downloads` copies while preserving
+    already-set `watermark_enabled` (`false` stays unwatermarked) and
+    `photo_license_history`.
+    - **New uploads (`POST /api/photos/draft`)**: prepare/encrypt the watermark
+      payload **once** per upload and embed those exact same bytes into both the
+      preview (`thumbnails`) and the free-download copy (`photo-downloads`).
+      Whenever `publish_directly: true` creates a free-download copy, require
+      current Terms (`LEGAL_DOCUMENTS.terms.version`) acceptance (`409` if
+      unaccepted and no valid `legalAcknowledgment` is supplied).
+    - **Draft → free publish (`PATCH /api/photos/[id]`)**: whenever creating a
+      free-download copy (`status: "published"` without external URL and no
+      existing `download_url`), require current Terms acceptance (`409` even if
+      `watermark_enabled` was already recorded earlier), use a unique per-attempt
+      download path (`download_<id>_<hex>.jpg`), and schedule rollback cleanup
+      only after each storage upload succeeds. When watermarking is enabled,
+      extract and reuse the exact opaque payload bytes already embedded in the
+      photo's existing preview for the download copy (without storing payload
+      text in the database); if the existing preview cannot be extracted safely,
+      prepare one payload and regenerate **both** preview and download copy
+      atomically from those same bytes. When opting out (`watermark_enabled:
+      false`) on a legacy photo or whenever the existing preview carries an
+      invisible watermark, regenerate the preview with its visible watermark
+      only so neither copy carries a hidden watermark.
+    - **Legacy photos (`watermark_enabled IS NULL`)**: `EditPhotoForm` shows an
+      explicit unchecked owner confirmation choice (enable vs. opt-out) plus
+      current Terms (`LEGAL_DOCUMENTS.terms.version`) acceptance whenever the
+      owner has not yet accepted the latest version; `PATCH /api/photos/[id]`
+      rejects free publication with `409` until both are confirmed, and records
+      terms acknowledgment only in admin-controlled `app_metadata.legal_acknowledgment`.
+    - **Backfill & rollout**: before cutting over the download route on a hosted
+      project, apply `202611240001_watermarked_downloads.sql`, publish the
+      updated legal documents with a real `publishedOn` date, and run
+      `scripts/backfill-photo-downloads.mjs` (`--dry-run`, then `--apply` only
+      for eligible authorized photos whose owners accepted the current published
+      terms version and have a non-null `watermark_enabled`); `--apply` strictly
+      rejects non-current `--required-terms-version` overrides and unpublished
+      terms (`publishedOn === null`). Never treat `terms-2` as acceptance of the
+      updated `terms-3` wording and never restore a fallback serving private
+      `originals`.
 - **Shared byte interface & role boundaries**:
   - The shared byte-based watermark core lives in `src/lib/watermark/`
     (`core.ts`, `dct.ts`, `packet.ts`) implementing DCT/QIM profile 1 (`PDIW`,
@@ -169,15 +217,13 @@ byte-identical free-download instructions:
     crypto format or payload schema.
   - **Sheril owns evaluation and robustness testing.** Do not alter her evaluation
     plan or claim unmeasured attack robustness.
-- **UNRESOLVED KEY-MODEL CONFLICT (must confirm with Achmad before implementing
-  key handling or crypto UI)**:
-  - The latest proposal specifies photographer passphrase-based AES-256-GCM +
-    PBKDF2-HMAC-SHA256 (100,000 iterations, 16 B salt, 12 B nonce, 16 B auth tag,
-    stateless — no stored keys), whereas an earlier team decision specified a
-    server-managed key with no extra form field.
-  - **Do NOT implement key handling or add a passphrase input field until Achmad
-    confirms which key model is current.** Once resolved, record the single chosen
-    model here and remove this conflict notice.
+- **Agreed key model (current decision)**:
+  - **Server-managed key with no photographer passphrase input field.** Keep
+    keys strictly server-side inside Wafa's crypto integration; do NOT add a
+    passphrase form field to upload, edit, or extraction pages unless Achmad
+    explicitly revises this decision.
+  - New uploads must encrypt the ownership payload **once** per photo and embed
+    those exact encrypted bytes into both the preview and the free-download copy.
 - **Verified capacity & 512 B vs. 16,384 B discrepancy**:
   - Profile 1 capacity is `max(0, min(512, floor(B / 24) - 40))` opaque bytes
     (where `B = floor(width / 8) * floor(height / 8)`). Example verified limits:
@@ -209,8 +255,8 @@ byte-identical free-download instructions:
     Explanation/risk links open `/about/hidden-watermark` in a new tab.
 - **Recovery / extraction (`/dashboard/extract` and `/verify` redirect)**:
   - Target recovery extracts the opaque watermark bytes from the submitted image,
-    then (once Wafa's crypto module and key model are integrated) decrypts and
-    authenticates them, displaying recovered data **only after authentication
+    then (once Wafa's server-managed-key crypto module is integrated) decrypts
+    and authenticates them, displaying recovered data **only after authentication
     succeeds**, with clear errors for missing, damaged, unsupported, or
     unauthenticated payloads.
   - `/dashboard/extract` authenticates on the server and renders `ExtractClient`

@@ -1,10 +1,12 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { MAX_PHOTO_SIZE_MB, PHOTO_ACCEPT, PHOTO_UPLOAD_BUCKET, validatePhotoFile } from "@/lib/photo-upload";
 import { readPhotoApiData, readPhotoPreview, storageUploadError } from "@/lib/photo-api";
+import { LEGAL_DOCUMENTS } from "@/lib/legal-documents";
 import type { GeminiBilingualResult } from "@/lib/server/gemini-analysis";
 import { OwnerLicenseGuidance } from "@/components/shared/PhotoLicense";
 import WatermarkPayloadField from "./WatermarkPayloadField";
@@ -22,7 +24,11 @@ async function discardUpload(path: string) {
   await fetch("/api/photos/upload", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path }), keepalive: true }).catch(() => undefined);
 }
 
-export default function UploadForm() {
+interface UploadFormProps {
+  hasAcceptedCurrentTerms?: boolean;
+}
+
+export default function UploadForm({ hasAcceptedCurrentTerms = true }: UploadFormProps = {}) {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const uploadPathRef = useRef<string | null>(null);
@@ -46,6 +52,7 @@ export default function UploadForm() {
   const [copiedField, setCopiedField] = useState<string | null>(null);
   const [payloadInput, setPayloadInput] = useState("");
   const [watermarkEnabled, setWatermarkEnabled] = useState(true);
+  const [termsChoice, setTermsChoice] = useState<"accepted" | "declined" | null>(null);
   const payloadValid = !watermarkEnabled || watermarkPayload(payloadInput).valid;
   const reviewOpen = phase === "review" || (phase === "saving" && useAI && !!editableAnalysis);
 
@@ -112,14 +119,24 @@ export default function UploadForm() {
   }
 
   function buildBaseFormData(captionEn: string, captionId: string, tagsEn: string[], tagsId: string[]) {
+    const publishDirectly = !wantsMicrostockLink;
     return {
       caption_en: captionEn.trim(),
       caption_id: captionId.trim(),
       tags_en: tagsEn,
       tags_id: tagsId,
-      publish_directly: !wantsMicrostockLink,
+      publish_directly: publishDirectly,
       watermark_enabled: watermarkEnabled,
       ...(watermarkEnabled ? { watermark_payload: payloadInput } : {}),
+      ...(publishDirectly && !hasAcceptedCurrentTerms && termsChoice === "accepted"
+        ? {
+            legalAcknowledgment: {
+              accepted: true,
+              termsVersion: LEGAL_DOCUMENTS.terms.version,
+              privacyVersion: LEGAL_DOCUMENTS.privacy.version,
+            },
+          }
+        : {}),
     };
   }
 
@@ -140,6 +157,10 @@ export default function UploadForm() {
     if (!originalFile) return;
     if (!payloadValid) { setErrorMessage("Kurangi payload hingga maksimal 512 byte."); return; }
     if (!manualCaption.trim()) { setErrorMessage("Caption tidak boleh kosong."); return; }
+    if (!wantsMicrostockLink && !hasAcceptedCurrentTerms && termsChoice !== "accepted") {
+      setErrorMessage("Setujui Syarat & Ketentuan terbaru terlebih dahulu sebelum mempublikasikan foto unduhan gratis.");
+      return;
+    }
     setPhase("saving"); setErrorMessage("");
 
     try {
@@ -177,6 +198,10 @@ export default function UploadForm() {
   async function handleSaveDraft() {
     if (!originalFile || !editableAnalysis) return;
     if (!payloadValid) { setErrorMessage("Kurangi payload hingga maksimal 512 byte."); return; }
+    if (!wantsMicrostockLink && !hasAcceptedCurrentTerms && termsChoice !== "accepted") {
+      setErrorMessage("Setujui Syarat & Ketentuan terbaru terlebih dahulu sebelum mempublikasikan foto unduhan gratis.");
+      return;
+    }
     setPhase("saving"); setErrorMessage("");
 
     try {
@@ -273,6 +298,46 @@ export default function UploadForm() {
               {wantsMicrostockLink ? "Akan disimpan sebagai DRAF sampai tautan ditambahkan dan foto dipublikasikan di halaman Edit." : "Akan dipublikasikan GRATIS saat Anda menyimpan."}
             </p>
             <OwnerLicenseGuidance external={wantsMicrostockLink} />
+            {!wantsMicrostockLink && !hasAcceptedCurrentTerms && (
+              <fieldset className="mt-4 border-t-2 border-[#111111] pt-4 space-y-2" disabled={isBusy}>
+                <legend className="text-sm font-bold uppercase text-[#111111]">
+                  Persetujuan Dokumen Terbaru ({LEGAL_DOCUMENTS.terms.version})
+                </legend>
+                <p className="text-sm font-medium text-[#111111]">
+                  Publikasi unduhan gratis memerlukan persetujuan{" "}
+                  <Link href={LEGAL_DOCUMENTS.terms.href} target="_blank" rel="noopener noreferrer" className="underline font-bold">
+                    Syarat &amp; Ketentuan ({LEGAL_DOCUMENTS.terms.version})
+                  </Link>{" "}
+                  dan{" "}
+                  <Link href={LEGAL_DOCUMENTS.privacy.href} target="_blank" rel="noopener noreferrer" className="underline font-bold">
+                    Kebijakan Privasi ({LEGAL_DOCUMENTS.privacy.version})
+                  </Link>
+                  .
+                </p>
+                <label className="flex items-start gap-3 cursor-pointer text-sm font-bold text-[#111111]">
+                  <input
+                    type="radio"
+                    name="upload_terms_acceptance"
+                    value="accepted"
+                    checked={termsChoice === "accepted"}
+                    onChange={() => { setTermsChoice("accepted"); setErrorMessage(""); }}
+                    className="radio radio-sm border-2 border-[#111111] mt-0.5 shrink-0"
+                  />
+                  <span>Saya menyetujui Syarat &amp; Ketentuan dan telah membaca Kebijakan Privasi terbaru</span>
+                </label>
+                <label className="flex items-start gap-3 cursor-pointer text-sm font-bold text-[#111111]">
+                  <input
+                    type="radio"
+                    name="upload_terms_acceptance"
+                    value="declined"
+                    checked={termsChoice === "declined"}
+                    onChange={() => setTermsChoice("declined")}
+                    className="radio radio-sm border-2 border-[#111111] mt-0.5 shrink-0"
+                  />
+                  <span>Belum menyetujui sekarang</span>
+                </label>
+              </fieldset>
+            )}
           </div>
 
           {errorMessage && phase === "compose" && (
