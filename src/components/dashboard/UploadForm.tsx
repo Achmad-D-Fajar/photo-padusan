@@ -112,7 +112,15 @@ export default function UploadForm() {
   }
 
   function buildBaseFormData(captionEn: string, captionId: string, tagsEn: string[], tagsId: string[]) {
-    return { caption_en: captionEn.trim(), caption_id: captionId.trim(), tags_en: tagsEn, tags_id: tagsId, publish_directly: !wantsMicrostockLink };
+    return {
+      caption_en: captionEn.trim(),
+      caption_id: captionId.trim(),
+      tags_en: tagsEn,
+      tags_id: tagsId,
+      publish_directly: !wantsMicrostockLink,
+      watermark_enabled: watermarkEnabled,
+      ...(watermarkEnabled ? { watermark_payload: payloadInput } : {}),
+    };
   }
 
   async function postToDraftRoute(data: ReturnType<typeof buildBaseFormData>) {

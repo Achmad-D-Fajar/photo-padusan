@@ -7,6 +7,8 @@ import { PHOTO_UPLOAD_BUCKET, isOwnedUploadPath } from "@/lib/photo-upload";
 import { captionToSlug } from "@/lib/slug";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { photoPageUrl } from "@/lib/legal-documents";
+import { watermarkPayload } from "@/lib/watermark-payload";
+import { WatermarkError, encodeWatermarkText } from "@/lib/watermark/core";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -16,6 +18,23 @@ function parseTags(value: unknown, required: string[]): string[] {
     throw new ApiError(400, "Tags harus berupa maksimal 30 teks (maks. 64 karakter per tag).");
   }
   return [...new Set([...required, ...value.map(tag => tag.trim()).filter(Boolean)])].slice(0, 30);
+}
+
+function parseWatermarkPayload(body: Record<string, unknown>): Uint8Array | null {
+  if (body.watermark_enabled !== undefined && typeof body.watermark_enabled !== "boolean") {
+    throw new ApiError(400, "Pengaturan watermark tidak valid.");
+  }
+  if (body.watermark_enabled === false) {
+    return null;
+  }
+  if (body.watermark_payload !== undefined && typeof body.watermark_payload !== "string") {
+    throw new ApiError(400, "Payload watermark harus berupa teks.");
+  }
+  const resolved = watermarkPayload(body.watermark_payload ?? "");
+  if (!resolved.valid) {
+    throw new ApiError(400, "Payload watermark melebihi batas 512 byte UTF-8. Kurangi teks payload tanpa pemotongan otomatis.");
+  }
+  return encodeWatermarkText(resolved.payload);
 }
 
 export async function POST(request: NextRequest) {
@@ -36,9 +55,20 @@ export async function POST(request: NextRequest) {
       }
       const tagsEn = parseTags(body.tags_en, ["padusan", "indonesia", "east java", "mojokerto"]);
       const tagsId = parseTags(body.tags_id, ["padusan", "indonesia", "jawa timur", "mojokerto"]);
+      const invisibleWatermarkPayload = parseWatermarkPayload(body);
       const rawBuffer = await readStagedPhoto(supabase, user.id, path);
-      // Validate and decode before creating permanent storage objects.
-      const { watermarkedBuffer } = await processImageForStorage(rawBuffer);
+      // Validate, decode, and apply visible + optional invisible watermark to the preview only.
+      let watermarkedBuffer: Buffer;
+      try {
+        ({ watermarkedBuffer } = await processImageForStorage(rawBuffer, {
+          invisibleWatermarkPayload,
+        }));
+      } catch (error) {
+        if (error instanceof WatermarkError) {
+          throw new ApiError(422, error.message);
+        }
+        throw error;
+      }
       const { data: profile } = await supabase.from("profiles").select("display_name, full_name").eq("id", user.id).single();
       const artist = profile?.full_name || profile?.display_name || "Fotografer Padustock";
       const finalBuffer = embedMetadata(watermarkedBuffer, {

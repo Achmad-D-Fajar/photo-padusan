@@ -1,7 +1,9 @@
 // SERVER-ONLY. Never import from Client Components.
 import sharp from "sharp";
 import type { OverlayOptions } from "sharp";
-import { createPhotoPreview } from "./photo-image";
+import { ApiError } from "./api-error";
+import { openPhotoImage } from "./photo-image";
+import { embedWatermark } from "@/lib/watermark/core";
 import {
   WATERMARK_STAMP_BASE64,
   WATERMARK_STAMP_W,
@@ -15,12 +17,13 @@ export interface ProcessImageResult {
   finalHeight: number;
 }
 
-interface ProcessOptions {
+export interface ProcessOptions {
   maxLongestSidePx?: number;
   jpegQuality?: number;
+  invisibleWatermarkPayload?: Uint8Array | null;
 }
 
-const DEFAULTS: Required<ProcessOptions> = {
+const DEFAULTS = {
   maxLongestSidePx: 1080,
   jpegQuality: 80,
 };
@@ -69,20 +72,57 @@ export async function processImageForStorage(
   inputBuffer: Buffer,
   options: ProcessOptions = {}
 ): Promise<ProcessImageResult> {
-  const { maxLongestSidePx, jpegQuality } = { ...DEFAULTS, ...options };
+  const maxLongestSidePx = options.maxLongestSidePx ?? DEFAULTS.maxLongestSidePx;
+  const jpegQuality = options.jpegQuality ?? DEFAULTS.jpegQuality;
+  const invisibleWatermarkPayload = options.invisibleWatermarkPayload ?? null;
 
-  const jpegOptions = { quality: jpegQuality, progressive: true, mozjpeg: true } as const;
-  const { data: downscaledBuffer, info } = await createPhotoPreview(inputBuffer, maxLongestSidePx, jpegQuality);
-  const finalWidth = info.width;
-  const finalHeight = info.height;
+  const jpegOptions = {
+    quality: jpegQuality,
+    progressive: true,
+    mozjpeg: true,
+    chromaSubsampling: "4:2:0",
+  } as const;
 
-  // Step 2: composite pre-baked stamp — no font lookup, works on any runtime
-  const watermarkOverlay = await buildWatermarkOverlay(finalWidth, finalHeight);
+  const image = await openPhotoImage(inputBuffer);
+  let resizedRgb: Buffer;
+  let finalWidth: number;
+  let finalHeight: number;
+  try {
+    const { data, info } = await image
+      .rotate()
+      .resize({ width: maxLongestSidePx, height: maxLongestSidePx, fit: "inside", withoutEnlargement: true })
+      .flatten({ background: "#ffffff" })
+      .toColourspace("srgb")
+      .removeAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    resizedRgb = data;
+    finalWidth = info.width;
+    finalHeight = info.height;
+  } catch {
+    throw new ApiError(422, "Gagal membaca gambar. File mungkin rusak.");
+  }
+  const rawInput = { raw: { width: finalWidth, height: finalHeight, channels: 3 as const } };
 
-  const watermarkedBuffer = await sharp(downscaledBuffer)
-    .composite([{ input: watermarkOverlay, blend: "over" }])
-    .jpeg(jpegOptions)
+  const downscaledBuffer = await sharp(resizedRgb, rawInput)
+    .toColourspace("srgb")
+    .jpeg({ quality: jpegQuality })
     .toBuffer();
+
+  // Step 2: composite pre-baked visible stamp on the lossless resized preview
+  const watermarkOverlay = await buildWatermarkOverlay(finalWidth, finalHeight);
+  const visibleComposite = sharp(resizedRgb, rawInput)
+    .composite([{ input: watermarkOverlay, blend: "over" }])
+    .toColourspace("srgb");
+
+  // Step 3: embed invisible watermark (when enabled) before the single final JPEG Q80 encode
+  let watermarkedBuffer: Buffer;
+  if (invisibleWatermarkPayload !== null) {
+    const visiblePng = await visibleComposite.png().toBuffer();
+    watermarkedBuffer = await embedWatermark(visiblePng, invisibleWatermarkPayload);
+  } else {
+    watermarkedBuffer = await visibleComposite.jpeg(jpegOptions).toBuffer();
+  }
 
   return { downscaledBuffer, watermarkedBuffer, finalWidth, finalHeight };
 }

@@ -177,3 +177,135 @@ test("standalone CLI reports explicit errors for unmarked, corrupted, missing fi
     fs.rmSync(tempDir, { recursive: true, force: true });
   }
 });
+
+test("Step 5: saved preview output from /api/photos/draft recovers exact bytes via standalone CLI while original stays unchanged", async t => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "padustock-step5-"));
+  const logged = [];
+  t.mock.method(console, "error", (...args) => logged.push(args));
+  t.mock.method(console, "log", (...args) => logged.push(args));
+
+  try {
+    const userId = "11111111-1111-4111-8111-111111111111";
+    const stagedPath = `${userId}/33333333-3333-4333-8333-333333333333.jpg`;
+    const originalBytes = await sharp(createTexturedRgb(1600, 1000, 505), {
+      raw: { width: 1600, height: 1000, channels: 3 },
+    })
+      .jpeg({ quality: 94 })
+      .toBuffer();
+    const originalSnapshot = Buffer.from(originalBytes);
+
+    async function runDraftAndSavePreview(bodyFields, outName) {
+      const uploadedThumbnails = [];
+      const movedOriginals = [];
+      const insertedRows = [];
+      const stagedCopy = Buffer.from(originalBytes);
+
+      const supabase = {
+        auth: { getUser: async () => ({ data: { user: { id: userId } }, error: null }) },
+        from: table => ({
+          select() { return this; },
+          eq() { return this; },
+          insert(row) { insertedRows.push(row); return this; },
+          single: async () =>
+            table === "profiles"
+              ? { data: { display_name: "Fotografer Desa" } }
+              : { data: { id: insertedRows[0]?.id ?? "photo" }, error: null },
+        }),
+        storage: {
+          from: bucket => ({
+            info: async () => ({ data: { size: stagedCopy.byteLength }, error: null }),
+            download: async () => ({ data: new Blob([stagedCopy]), error: null }),
+            upload: async (destPath, fileBuffer) => {
+              uploadedThumbnails.push({ bucket, destPath, buffer: Buffer.from(fileBuffer) });
+              return { error: null };
+            },
+            move: async (src, dst, opts) => {
+              movedOriginals.push({ src, dst, opts, bytes: Buffer.from(stagedCopy) });
+              return { error: null };
+            },
+            getPublicUrl: p => ({ data: { publicUrl: `https://example.test/storage/${bucket}/${p}` } }),
+            remove: async () => ({ error: null }),
+          }),
+        },
+      };
+
+      const route = loadTs("src/app/api/photos/draft/route.ts", {
+        "@/lib/supabase/server": { createClient: async () => supabase },
+        "@/lib/supabase/admin": { createAdminClient: () => supabase },
+      });
+
+      const req = new Request("http://localhost/api/photos/draft", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          path: stagedPath,
+          caption_en: "Padusan sunrise",
+          caption_id: "Matahari terbit Padusan",
+          tags_en: ["sunrise"],
+          tags_id: ["pagi"],
+          publish_directly: true,
+          ...bodyFields,
+        }),
+      });
+
+      const res = await route.POST(req);
+      assert.equal(res.status, 201);
+      assert.equal(uploadedThumbnails.length, 1);
+      assert.equal(movedOriginals.length, 1);
+      assert.equal(insertedRows.length, 1);
+
+      // Original moved to `originals` bucket must remain byte-identical
+      assert.deepEqual(movedOriginals[0].bytes, originalSnapshot);
+
+      // Payload must stay transient — never persisted in the photos DB row
+      assert.equal(Object.keys(insertedRows[0]).some(k => /watermark|payload/i.test(k)), false);
+
+      // Save actual preview JPEG output (with visible stamp + invisible watermark + EXIF/IPTC) to disk
+      const previewFile = path.join(tempDir, outName);
+      fs.writeFileSync(previewFile, uploadedThumbnails[0].buffer);
+      return previewFile;
+    }
+
+    // 1. Blank input resolves to default PADUSTOCK-IWM-v1 and recovers exact bytes via CLI
+    const defaultPreview = await runDraftAndSavePreview(
+      { watermark_enabled: true, watermark_payload: "   " },
+      "draft-default-preview.jpg"
+    );
+    const defaultRaw = runCli([defaultPreview, "--raw"], { raw: true });
+    assert.equal(defaultRaw.status, 0);
+    assert.deepEqual(defaultRaw.stdout, Buffer.from("PADUSTOCK-IWM-v1", "utf8"));
+    const defaultJson = runCli([defaultPreview, "--json"]);
+    assert.equal(defaultJson.status, 0, defaultJson.stderr);
+    assert.equal(JSON.parse(defaultJson.stdout).payload, "PADUSTOCK-IWM-v1");
+
+    // 2. Custom Indonesian + emoji + multiline + whitespace payload recovers exact bytes via CLI
+    const customPayload = "  Desa Padusan 🌿\nLangkah 5 — uji simpan\t ";
+    const customPreview = await runDraftAndSavePreview(
+      { watermark_enabled: true, watermark_payload: customPayload },
+      "draft-custom-preview.jpg"
+    );
+    const customRaw = runCli([customPreview, "--raw"], { raw: true });
+    assert.equal(customRaw.status, 0);
+    assert.deepEqual(customRaw.stdout, Buffer.from(customPayload, "utf8"));
+    const customJson = runCli([customPreview, "--json"]);
+    assert.equal(customJson.status, 0, customJson.stderr);
+    const parsedCustom = JSON.parse(customJson.stdout);
+    assert.equal(parsedCustom.payload, customPayload);
+    assert.equal(parsedCustom.byteLength, Buffer.byteLength(customPayload, "utf8"));
+
+    // 3. Explicit opt-out produces a valid preview JPEG with NO invisible watermark
+    const optOutPreview = await runDraftAndSavePreview(
+      { watermark_enabled: false },
+      "draft-optout-preview.jpg"
+    );
+    const optOutJson = runCli([optOutPreview, "--json"]);
+    assert.equal(optOutJson.status, 1);
+    assert.equal(optOutJson.stdout, "");
+    assert.equal(JSON.parse(optOutJson.stderr).code, "NO_WATERMARK");
+
+    // Verify custom payload was never logged anywhere on the server
+    assert.equal(JSON.stringify(logged).includes(customPayload), false);
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});

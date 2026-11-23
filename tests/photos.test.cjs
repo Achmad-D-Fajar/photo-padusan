@@ -39,6 +39,8 @@ for (const authenticated of [false, true]) {
 
 function draftHarness(failure) {
   const calls = [];
+  const cache = new Map();
+  const { WatermarkError } = loadTs("src/lib/watermark/core.ts", {}, cache);
   const supabase = {
     auth: { getUser: async () => ({ data: { user: { id: userId } }, error: null }) },
     from: table => ({
@@ -57,14 +59,24 @@ function draftHarness(failure) {
   const route = loadTs("src/app/api/photos/draft/route.ts", {
     "@/lib/supabase/server": { createClient: async () => supabase },
     "@/lib/supabase/admin": { createAdminClient: () => supabase },
-    "@/lib/server/image-processing": { processImageForStorage: async () => {
-      calls.push(["process"]);
+    "@/lib/server/image-processing": { processImageForStorage: async (_raw, options) => {
+      calls.push(["process", options]);
       if (failure === "decode") throw new Error("Decode failed");
+      if (failure === "watermark-too-small") {
+        throw new WatermarkError("IMAGE_TOO_SMALL", "Dimensi gambar terlalu kecil untuk watermark tersembunyi.");
+      }
+      if (failure === "watermark-capacity") {
+        throw new WatermarkError("CAPACITY_EXCEEDED", "Payload melebihi kapasitas maksimum gambar ini.");
+      }
       return { watermarkedBuffer: Buffer.from("jpeg") };
     } },
     "@/lib/server/exif-writer": { embedMetadata: (bytes, metadata) => { calls.push(["metadata", metadata]); return bytes; } },
-  });
-  return { calls, post: path => route.POST(request({ path, caption_en: "Field", caption_id: "Sawah", tags_en: [], tags_id: [], publish_directly: true })) };
+  }, cache);
+  return {
+    calls,
+    post: (path, extra = {}) =>
+      route.POST(request({ path, caption_en: "Field", caption_id: "Sawah", tags_en: [], tags_id: [], publish_directly: true, ...extra })),
+  };
 }
 
 test("draft rejects other users' upload references", async () => {
@@ -103,6 +115,8 @@ test("database failures clean staging, thumbnail, and permanent original", async
 test("successful publication retains the HEIC extension and free download state", async () => {
   const { calls, post } = draftHarness();
   assert.equal((await post(uploadPath)).status, 201);
+  const processCall = calls.find(([name]) => name === "process");
+  assert.equal(Buffer.from(processCall[1].invisibleWatermarkPayload).toString("utf8"), "PADUSTOCK-IWM-v1");
   const photo = calls.find(([name]) => name === "insert")[1];
   assert.equal(photo.status, "published");
   assert.equal(photo.microstock_url, null);
@@ -111,6 +125,59 @@ test("successful publication retains the HEIC extension and free download state"
   assert.ok(metadata.photoPageUrl.endsWith(`/photo/${photo.id}`));
   assert.ok(!/All rights reserved|CC BY|creativecommons/.test(metadata.copyright));
   assert.ok(!calls.some(([name]) => name === "remove"));
+});
+
+test("draft forwards custom UTF-8 payload, respects opt-out, and rejects invalid/oversized payloads", async () => {
+  // 1. Custom non-blank payload preserved verbatim
+  const custom = "  Desa Padusan 🌿\nBaris 2\t ";
+  {
+    const { calls, post } = draftHarness();
+    const res = await post(uploadPath, { watermark_enabled: true, watermark_payload: custom });
+    assert.equal(res.status, 201);
+    const processCall = calls.find(([name]) => name === "process");
+    assert.equal(Buffer.from(processCall[1].invisibleWatermarkPayload).toString("utf8"), custom);
+  }
+
+  // 2. Blank payload resolves to default PADUSTOCK-IWM-v1
+  {
+    const { calls, post } = draftHarness();
+    const res = await post(uploadPath, { watermark_enabled: true, watermark_payload: "  \n\t " });
+    assert.equal(res.status, 201);
+    const processCall = calls.find(([name]) => name === "process");
+    assert.equal(Buffer.from(processCall[1].invisibleWatermarkPayload).toString("utf8"), "PADUSTOCK-IWM-v1");
+  }
+
+  // 3. Opt-out skips invisible watermark embedding
+  {
+    const { calls, post } = draftHarness();
+    const res = await post(uploadPath, { watermark_enabled: false });
+    assert.equal(res.status, 201);
+    const processCall = calls.find(([name]) => name === "process");
+    assert.equal(processCall[1].invisibleWatermarkPayload, null);
+  }
+
+  // 4. Invalid types or > 512 UTF-8 bytes reject with 400 before downloading or uploading
+  for (const badFields of [
+    { watermark_enabled: "false" },
+    { watermark_enabled: true, watermark_payload: 123 },
+    { watermark_enabled: true, watermark_payload: "a".repeat(513) },
+    { watermark_enabled: true, watermark_payload: "🌿".repeat(129) },
+  ]) {
+    const { calls, post } = draftHarness();
+    const res = await post(uploadPath, badFields);
+    assert.equal(res.status, 400);
+    assert.ok(!calls.some(([name]) => name === "download" || name === "process" || name === "upload" || name === "move"));
+    assert.ok(calls.some(([name, bucket]) => name === "remove" && bucket === "photo-uploads"));
+  }
+
+  // 5. Image too small / capacity exceeded maps to 422 and cleans up staging without permanent objects
+  for (const failure of ["watermark-too-small", "watermark-capacity"]) {
+    const { calls, post } = draftHarness(failure);
+    const res = await post(uploadPath, { watermark_enabled: true, watermark_payload: "PADUSTOCK-IWM-v1" });
+    assert.equal(res.status, 422);
+    assert.ok(!calls.some(([name]) => name === "upload" || name === "move"));
+    assert.ok(calls.some(([name, bucket]) => name === "remove" && bucket === "photo-uploads"));
+  }
 });
 
 for (const storageFailure of [false, true]) {

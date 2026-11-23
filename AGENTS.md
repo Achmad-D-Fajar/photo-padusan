@@ -122,23 +122,38 @@ npm run build
 - Preserve the authenticated daily cleanup in `vercel.json` and its
   `CRON_SECRET` check; it removes abandoned staging files older than 24 hours.
 
-## Watermark frontend
+## Invisible watermark core, preview embedding, and frontend
 
-- Watermark payload preparation is client-only: `watermark-payload.ts` resolves
-  blank text to `PADUSTOCK-IWM-v1` and enforces 512 UTF-8 bytes without
-  truncation. Do not add the field to upload, analysis, translation, or save APIs.
+- The shared byte-based watermark core lives in `src/lib/watermark/`
+  (`core.ts`, `dct.ts`, `packet.ts`) implementing DCT/QIM profile 1 (`PDIW`,
+  version `1`, profile `1`, `Delta = 48`, 3x repetition with xorshift32
+  `0x50444957` Fisher-Yates placement, 40-byte SHA-256 framing, 512-byte cap).
+  `scripts/extract-watermark.mjs` imports the exact same core via `scripts/load-ts.cjs`.
+- `watermark-payload.ts` resolves blank text to `PADUSTOCK-IWM-v1` and enforces
+  512 UTF-8 bytes without truncation. Approved narrow exception for
+  `POST /api/photos/draft`: `UploadForm` sends `watermark_enabled` (and
+  `watermark_payload` only when enabled) exclusively to `POST /api/photos/draft`.
+  Keep the payload strictly transient on the server: never store it in the
+  database, never log it, and never send watermark fields to upload, preview,
+  analysis, or translation endpoints.
+- `POST /api/photos/draft` embeds the invisible watermark into the generated JPEG
+  preview after the visible watermark stamp (single final JPEG Q80
+  progressive/mozjpeg 4:2:0 encode), preserves explicit opt-out
+  (`watermark_enabled: false`), and rejects oversized payloads (`400`/`422`) or
+  too-small images (`422`) explicitly without truncation or silent skip.
+  Original uploads and downloads remain byte-identical.
 - Keep the compact watermark disclosure immediately above upload/review actions.
   Default information stays outside it; payload and opt-out state survive AI
-  review and retries. Opt-out is client-only, retains typed text, and bypasses
-  payload validation while disabled. Explanation/risk links open the public
-  `/about/hidden-watermark` page in a new tab so the form is not discarded.
-  Keep future preview-only scope distinct from current unconnected behavior.
+  review and retries. Opt-out retains typed text, bypasses payload validation
+  while disabled, and omits `watermark_payload` when saving. Explanation/risk
+  links open the public `/about/hidden-watermark` page in a new tab so the form
+  is not discarded.
 - `/dashboard/extract` authenticates on the server and renders `ExtractForm`
-  without an extractor. Its optional client callback is the integration boundary;
-  production must show unavailable until a real adapter is authorized. Controlled
-  test responses belong only in `tests/ui/fixture-app`, a local component harness.
-  No payload embedding, encryption, backend extraction, or download changes are
-  implemented by this frontend. Preserve existing visible preview watermarking.
+  without an extractor until web extraction integration is implemented. Its
+  optional client callback is the integration boundary; production shows
+  unavailable until wired. Controlled test responses belong only in
+  `tests/ui/fixture-app`, a local component harness. No encryption or download
+  changes are implemented here. Preserve existing visible preview watermarking.
 
 ## AI requests
 

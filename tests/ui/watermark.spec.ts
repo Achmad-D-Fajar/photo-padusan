@@ -109,14 +109,18 @@ test("extraction fixture exercises success, errors, stale work, and clipboard fa
   await noOverflow(page);
 });
 
-test("upload payload persists across workflows and retries without entering API bodies", async ({ page }, info) => {
+test("upload payload persists across workflows and retries and reaches only /api/photos/draft", async ({ page }, info) => {
   await login(page);
-  const bodies: Record<string, unknown>[] = [];
+  const nonDraftBodies: Record<string, unknown>[] = [];
+  const draftBodies: Record<string, unknown>[] = [];
   let attempts = 0;
   await page.route("**/api/photos/**", async route => {
     const request = route.request();
     const body = request.postDataJSON();
-    if (body) bodies.push(body);
+    if (body) {
+      if (request.url().endsWith("/draft")) draftBodies.push(body);
+      else nonDraftBodies.push(body);
+    }
     if (request.url().endsWith("/upload")) return route.fulfill({ json: request.method() === "DELETE" ? { success: true } : { success: true, data: { path: "11111111-1111-4111-8111-111111111111/test.png", token: "fixture", contentType: "image/png" } } });
     if (request.url().endsWith("/preview")) return route.fulfill({ contentType: "image/jpeg", body: png });
     if (request.url().endsWith("/translate")) return route.fulfill({ json: { success: true, data: { caption_en: "Field", tags_en: ["field"] } } });
@@ -195,10 +199,15 @@ test("upload payload persists across workflows and retries without entering API 
   await expect(page).toHaveURL(/\/dashboard$/);
   await expect(page.getByRole("link", { name: "Ekstraksi watermark", exact: true })).toBeVisible();
   expect(attempts).toBe(3);
-  for (const body of bodies) {
+  for (const body of nonDraftBodies) {
     expect(JSON.stringify(body)).not.toContain("Padusan 🌿");
     expect(Object.keys(body).some(key => /payload|watermark/i.test(key))).toBeFalsy();
   }
+  expect(draftBodies.map(b => ({ enabled: b.watermark_enabled, payload: b.watermark_payload }))).toEqual([
+    { enabled: true, payload },
+    { enabled: true, payload: `${payload}\nAI review` },
+    { enabled: true, payload: `${payload}\nAI review` },
+  ]);
 });
 
 test("hidden watermark explanation is public and links to the opt-out risk section", async ({ page }, info) => {
