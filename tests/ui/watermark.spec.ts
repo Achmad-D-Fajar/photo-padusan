@@ -23,11 +23,51 @@ async function trackUrls(page: Page) {
   });
 }
 
+test("extraction is authenticated, unavailable in production, and uses local previews", async ({ page }, info) => {
+  await page.goto("/dashboard/extract");
+  await expect(page).toHaveURL(/\/login$/);
+  await login(page);
+  await trackUrls(page);
+  await page.goto("/dashboard/extract");
+  await expect(page.getByRole("heading", { name: "Ekstraksi watermark" })).toBeVisible();
+  if ((page.viewportSize()?.width ?? 0) < 1024) await page.getByRole("button", { name: "Buka menu navigasi" }).click();
+  await expect(page.getByRole("link", { name: "Ekstraksi", exact: true })).toBeVisible();
+  if ((page.viewportSize()?.width ?? 0) < 1024) await page.getByRole("button", { name: "Buka menu navigasi" }).evaluate(button => button.blur());
+  await expect(page.getByRole("button", { name: "Ekstrak payload" })).toBeDisabled();
+  await expect(page.getByText("Fitur ekstraksi belum terhubung", { exact: true })).toBeVisible();
+  const sent: string[] = [];
+  page.on("request", request => { if (request.method() !== "GET") sent.push(request.url()); });
+  await page.getByLabel(/Pilih gambar/).setInputFiles(image);
+  const preview = page.getByRole("img", { name: "Pratinjau penuh padusan.png" });
+  await expect(preview).toBeVisible();
+  expect(await preview.evaluate(node => getComputedStyle(node).objectFit)).toBe("contain");
+  await expect(page.getByText("padusan.png", { exact: true })).toBeVisible();
+  await page.getByLabel(/Pilih gambar/).setInputFiles({ name: "kamera.heic", mimeType: "", buffer: Buffer.from("local undecodable HEIC fixture") });
+  await expect(page.getByText(/Pratinjau tidak tersedia di browser ini/)).toBeVisible();
+  await expect(page.getByText("kamera.heic", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Ekstrak payload" })).toBeDisabled();
+  expect(sent).toEqual([]);
+  const originalViewport = page.viewportSize()!;
+  for (const width of [320, 375, 414, 768]) {
+    await page.setViewportSize({ width, height: 900 });
+    await noOverflow(page);
+    await page.screenshot({ path: info.outputPath(`extract-${width}.png`), fullPage: true });
+  }
+  await page.setViewportSize(originalViewport);
+  await page.screenshot({ path: info.outputPath("extract-unavailable.png"), fullPage: true });
+  await page.getByRole("button", { name: "Reset", exact: true }).click();
+  await expect(page.getByText(/Belum ada gambar/)).toBeVisible();
+  const urls = await page.evaluate(() => (window as unknown as { fixtureUrls: { created: string[]; revoked: string[] } }).fixtureUrls);
+  expect(urls.created.length).toBe(2);
+  expect(urls.revoked).toEqual(urls.created);
+  await page.getByLabel(/Pilih gambar/).setInputFiles({ name: "bad.txt", mimeType: "text/plain", buffer: Buffer.from("test") });
+  await expect(page.locator("#extraction-file-error")).toContainText("Format gambar tidak didukung");
+});
+
 test("extraction fixture exercises success, errors, stale work, and clipboard failure", async ({ page }, info) => {
   await trackUrls(page);
   await page.goto("http://127.0.0.1:3101");
   await expect(page.getByText(/Belum ada hasil/)).toBeVisible();
-  await expect(page.getByLabel(/Pilih gambar/)).toBeEnabled();
   await page.getByLabel(/Pilih gambar/).setInputFiles(image);
   await page.getByRole("button", { name: "Ekstrak payload" }).click();
   const output = page.getByLabel("Teks payload hasil ekstraksi");
@@ -164,7 +204,7 @@ test("upload payload persists across workflows and retries without entering API 
 test("hidden watermark explanation is public and links to the opt-out risk section", async ({ page }, info) => {
   await page.goto("/about/hidden-watermark");
   await expect(page.getByRole("heading", { level: 1, name: "Tentang watermark tersembunyi" })).toBeVisible();
-  await expect(page.getByLabel("Ringkasan dan status fitur")).toContainText("Mode simulasi");
+  await expect(page.getByLabel("Ringkasan dan status fitur")).toContainText("belum terhubung");
   await expect(page.locator(".watermark-article section")).toHaveCount(8);
   await expect(page.locator("#informasi")).toContainText("bukan identitas unik foto");
   await expect(page.locator("#informasi")).toContainText("Jangan masukkan password");

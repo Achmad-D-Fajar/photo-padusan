@@ -145,37 +145,6 @@ test("large downloads redirect to storage with the original file extension", asy
   assert.equal(response.headers.get("cache-control"), "no-store");
 });
 
-test("capstone demo attribution download names resolve to the downloaded photo and uploader", async () => {
-  const photoId = "22222222-2222-4222-8222-222222222222";
-  let signed;
-  const route = loadTs("src/app/api/photos/download/[id]/route.ts", {
-    "@/lib/supabase/server": { createClient: async () => ({ from: () => ({
-      select() { return this; }, eq() { return this; },
-      single: async () => ({ data: { id: photoId, user_id: userId, caption_id: "Padustock Demo", microstock_url: null }, error: null }),
-    }) }) },
-    "@/lib/supabase/admin": { createAdminClient: () => ({
-      from: () => ({ select() { return this; }, eq() { return this; }, single: async () => ({
-        data: { image_url: `https://example.test/storage/v1/object/public/originals/${userId}/original.png`, microstock_url: null },
-      }) }),
-      storage: { from: bucket => ({ createSignedUrl: async (path, seconds, options) => {
-        signed = { bucket, path, seconds, options };
-        return { data: { signedUrl: "https://example.test/demo-download" }, error: null };
-      } }) },
-    }) },
-  });
-  const response = await route.GET(new Request("http://localhost"), { params: Promise.resolve({ id: photoId }) });
-  assert.equal(response.status, 307);
-  assert.equal(signed.bucket, "originals");
-  assert.equal(signed.path, `${userId}/original.png`);
-  assert.equal(signed.seconds, 60);
-  assert.equal(signed.options.download, `padustock-demo-${photoId}-${userId}-padustock.png`);
-  const { resolveDemoExtraction } = loadTs("src/lib/demo-extraction.ts");
-  assert.deepEqual(JSON.parse(resolveDemoExtraction({ name: signed.options.download }).payload), {
-    v: 1, photo_id: photoId, photographer_id: userId, photographer_name: "Wafa",
-    photo_url: `https://padustock.vercel.app/photo/${photoId}`,
-  });
-});
-
 test("editing a published free photo preserves its public status and null purchase URL", async () => {
   let payload;
   const component = loadTs("src/components/dashboard/EditPhotoForm.tsx", {
