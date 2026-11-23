@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { processImageForStorage } from "@/lib/server/image-processing";
+import { createWatermarkedDownloadCopy, processImageForStorage } from "@/lib/server/image-processing";
 import { embedMetadata } from "@/lib/server/exif-writer";
 import { requirePhotoUser, readStagedPhoto, removeStagedPhoto, removePhotoObject } from "@/lib/server/photo-upload";
 import { ApiError, apiErrorResponse, readJson } from "@/lib/server/api-error";
-import { PHOTO_UPLOAD_BUCKET, isOwnedUploadPath } from "@/lib/photo-upload";
+import { PHOTO_DOWNLOAD_BUCKET, PHOTO_UPLOAD_BUCKET, isOwnedUploadPath } from "@/lib/photo-upload";
 import { captionToSlug } from "@/lib/slug";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { photoPageUrl } from "@/lib/legal-documents";
@@ -44,7 +44,9 @@ export async function POST(request: NextRequest) {
     const path = body.path;
     if (!isOwnedUploadPath(path, user.id)) throw new ApiError(400, "Lokasi unggahan tidak valid.");
     const photoId = crypto.randomUUID();
+    const publishDirectly = body.publish_directly === true;
     let originalPath: string | null = null;
+    let downloadPath: string | null = null;
     let thumbnailPath: string | null = null;
     let committed = false;
     try {
@@ -57,18 +59,24 @@ export async function POST(request: NextRequest) {
       const tagsId = parseTags(body.tags_id, ["padusan", "indonesia", "jawa timur", "mojokerto"]);
       const invisibleWatermarkPayload = parseWatermarkPayload(body);
       const rawBuffer = await readStagedPhoto(supabase, user.id, path);
-      // Validate, decode, and apply visible + optional invisible watermark to the preview only.
+
+      // Generate and verify all required outputs before writing any permanent storage object.
       let watermarkedBuffer: Buffer;
+      let downloadBuffer: Buffer | null = null;
       try {
         ({ watermarkedBuffer } = await processImageForStorage(rawBuffer, {
           invisibleWatermarkPayload,
         }));
+        if (publishDirectly) {
+          ({ downloadBuffer } = await createWatermarkedDownloadCopy(rawBuffer, invisibleWatermarkPayload));
+        }
       } catch (error) {
         if (error instanceof WatermarkError) {
           throw new ApiError(422, error.message);
         }
         throw error;
       }
+
       const { data: profile } = await supabase.from("profiles").select("display_name, full_name").eq("id", user.id).single();
       const artist = profile?.full_name || profile?.display_name || "Fotografer Padustock";
       const finalBuffer = embedMetadata(watermarkedBuffer, {
@@ -81,6 +89,15 @@ export async function POST(request: NextRequest) {
       const { error: thumbnailError } = await supabase.storage.from("thumbnails").upload(thumbPath, finalBuffer, { contentType: "image/jpeg", upsert: false });
       if (thumbnailError) throw new ApiError(502, "Gagal mengunggah thumbnail.");
 
+      let downloadUrl: string | null = null;
+      if (publishDirectly && downloadBuffer) {
+        const dlPath = `${user.id}/download_${photoId}.jpg`;
+        downloadPath = dlPath;
+        const { error: downloadError } = await supabase.storage.from(PHOTO_DOWNLOAD_BUCKET).upload(dlPath, downloadBuffer, { contentType: "image/jpeg", upsert: false });
+        if (downloadError) throw new ApiError(502, "Gagal mengunggah salinan unduhan.");
+        ({ data: { publicUrl: downloadUrl } } = supabase.storage.from(PHOTO_DOWNLOAD_BUCKET).getPublicUrl(dlPath));
+      }
+
       const destination = `${user.id}/original_${photoId}.${path.split(".").pop()}`;
       originalPath = destination;
       const { error: moveError } = await createAdminClient().storage.from(PHOTO_UPLOAD_BUCKET).move(path, destination, { destinationBucket: "originals" });
@@ -88,9 +105,9 @@ export async function POST(request: NextRequest) {
       const { data: { publicUrl: imageUrl } } = supabase.storage.from("originals").getPublicUrl(destination);
       const { data: { publicUrl: thumbnailUrl } } = supabase.storage.from("thumbnails").getPublicUrl(thumbPath);
       const { data: photo, error: insertError } = await supabase.from("photos").insert({
-        id: photoId, user_id: user.id, image_url: imageUrl, thumbnail_url: thumbnailUrl,
+        id: photoId, user_id: user.id, image_url: imageUrl, download_url: downloadUrl, thumbnail_url: thumbnailUrl,
         caption_en: captionEn || null, caption_id: captionId || null, tags_en: tagsEn, tags_id: tagsId,
-        status: body.publish_directly === true ? "published" : "draft", microstock_url: null,
+        status: publishDirectly ? "published" : "draft", microstock_url: null,
       }).select("id").single();
       if (insertError || !photo) throw new ApiError(500, "Gagal menyimpan foto ke database.");
       committed = true;
@@ -100,6 +117,7 @@ export async function POST(request: NextRequest) {
         const results = await Promise.allSettled([
           removeStagedPhoto(supabase, user.id, path),
           ...(originalPath ? [removePhotoObject(supabase, "originals", originalPath)] : []),
+          ...(downloadPath ? [removePhotoObject(supabase, PHOTO_DOWNLOAD_BUCKET, downloadPath)] : []),
           ...(thumbnailPath ? [removePhotoObject(supabase, "thumbnails", thumbnailPath)] : []),
         ]);
         for (const result of results) if (result.status === "rejected") console.error("[upload cleanup]", result.reason);

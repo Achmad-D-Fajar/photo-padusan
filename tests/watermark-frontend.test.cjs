@@ -68,3 +68,10 @@ test("extraction route independently requires an authenticated server session", 
     await assert.rejects(page(), /redirect:\/login/);
   }
 });
+
+test("/verify route redirects to authenticated /dashboard/extract", () => {
+  const { default: verifyPage } = loadTs("src/app/verify/page.tsx", {
+    "next/navigation": { redirect: location => { throw new Error(`redirect:${location}`); } },
+  });
+  assert.throws(() => verifyPage(), /redirect:\/dashboard\/extract/);
+});

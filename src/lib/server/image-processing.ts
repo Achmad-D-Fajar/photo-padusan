@@ -3,18 +3,29 @@ import sharp from "sharp";
 import type { OverlayOptions } from "sharp";
 import { ApiError } from "./api-error";
 import { openPhotoImage } from "./photo-image";
-import { embedWatermark } from "@/lib/watermark/core";
+import { WatermarkError, embedWatermarkRawRgb, extractWatermark } from "@/lib/watermark/core";
 import {
   WATERMARK_STAMP_BASE64,
   WATERMARK_STAMP_W,
   WATERMARK_STAMP_H,
 } from "./watermark-stamp";
 
+export const DOWNLOAD_COPY_JPEG_QUALITY = 92;
+
 export interface ProcessImageResult {
   downscaledBuffer: Buffer; // Clean — sent to Gemini
-  watermarkedBuffer: Buffer; // Watermarked — uploaded to Storage
+  watermarkedBuffer: Buffer; // Visible + optional invisible watermark preview JPEG (Q80)
   finalWidth: number;
   finalHeight: number;
+}
+
+export interface FullResolutionDownloadResult {
+  downloadBuffer: Buffer; // Full-resolution JPEG (Q92), no visible watermark, optional invisible watermark
+  width: number;
+  height: number;
+  contentType: "image/jpeg";
+  extension: "jpg";
+  jpegQuality: number;
 }
 
 export interface ProcessOptions {
@@ -27,6 +38,21 @@ const DEFAULTS = {
   maxLongestSidePx: 1080,
   jpegQuality: 80,
 };
+
+async function verifyEmbeddedWatermarkBytes(jpegBuffer: Buffer, expectedPayload: Uint8Array): Promise<void> {
+  const recovered = await extractWatermark(jpegBuffer);
+  if (
+    recovered.byteLength !== expectedPayload.byteLength ||
+    !Buffer.from(recovered.payload.buffer, recovered.payload.byteOffset, recovered.payload.byteLength).equals(
+      Buffer.from(expectedPayload.buffer, expectedPayload.byteOffset, expectedPayload.byteLength)
+    )
+  ) {
+    throw new WatermarkError(
+      "INTEGRITY_FAILED",
+      "Verifikasi watermark tersembunyi setelah penyandian JPEG gagal."
+    );
+  }
+}
 
 // Decoded once at module load — zero runtime font lookup.
 const STAMP = Buffer.from(WATERMARK_STAMP_BASE64, "base64");
@@ -118,11 +144,77 @@ export async function processImageForStorage(
   // Step 3: embed invisible watermark (when enabled) before the single final JPEG Q80 encode
   let watermarkedBuffer: Buffer;
   if (invisibleWatermarkPayload !== null) {
-    const visiblePng = await visibleComposite.png().toBuffer();
-    watermarkedBuffer = await embedWatermark(visiblePng, invisibleWatermarkPayload);
+    const visibleRgb = await visibleComposite.removeAlpha().raw().toBuffer();
+    watermarkedBuffer = await embedWatermarkRawRgb(
+      new Uint8Array(visibleRgb.buffer, visibleRgb.byteOffset, visibleRgb.byteLength),
+      finalWidth,
+      finalHeight,
+      invisibleWatermarkPayload,
+      { jpegQuality }
+    );
+    await verifyEmbeddedWatermarkBytes(watermarkedBuffer, invisibleWatermarkPayload);
   } else {
     watermarkedBuffer = await visibleComposite.jpeg(jpegOptions).toBuffer();
   }
 
   return { downscaledBuffer, watermarkedBuffer, finalWidth, finalHeight };
+}
+
+// Generates a separate full-resolution JPEG download copy (quality 92,
+// progressive/mozjpeg 4:2:0) with full oriented dimensions and NO visible
+// watermark. When invisibleWatermarkPayload is provided, embeds and verifies
+// the exact payload bytes before returning.
+export async function createWatermarkedDownloadCopy(
+  inputBuffer: Buffer,
+  invisibleWatermarkPayload: Uint8Array | null
+): Promise<FullResolutionDownloadResult> {
+  const image = await openPhotoImage(inputBuffer);
+  let fullRgb: Buffer;
+  let width: number;
+  let height: number;
+  try {
+    const { data, info } = await image
+      .rotate()
+      .flatten({ background: "#ffffff" })
+      .toColourspace("srgb")
+      .removeAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    fullRgb = data;
+    width = info.width;
+    height = info.height;
+  } catch {
+    throw new ApiError(422, "Gagal membaca gambar. File mungkin rusak.");
+  }
+
+  let downloadBuffer: Buffer;
+  if (invisibleWatermarkPayload !== null) {
+    downloadBuffer = await embedWatermarkRawRgb(
+      new Uint8Array(fullRgb.buffer, fullRgb.byteOffset, fullRgb.byteLength),
+      width,
+      height,
+      invisibleWatermarkPayload,
+      { jpegQuality: DOWNLOAD_COPY_JPEG_QUALITY }
+    );
+    await verifyEmbeddedWatermarkBytes(downloadBuffer, invisibleWatermarkPayload);
+  } else {
+    downloadBuffer = await sharp(fullRgb, { raw: { width, height, channels: 3 } })
+      .toColourspace("srgb")
+      .jpeg({
+        quality: DOWNLOAD_COPY_JPEG_QUALITY,
+        progressive: true,
+        mozjpeg: true,
+        chromaSubsampling: "4:2:0",
+      })
+      .toBuffer();
+  }
+
+  return {
+    downloadBuffer,
+    width,
+    height,
+    contentType: "image/jpeg",
+    extension: "jpg",
+    jpegQuality: DOWNLOAD_COPY_JPEG_QUALITY,
+  };
 }

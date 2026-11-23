@@ -96,14 +96,20 @@ npm run build
   including the Linux files in `@img/sharp-libvips-linux-x64`.
 - Apply orientation before calculating preview/watermark dimensions. Use actual
   resized dimensions and scale the watermark to fit tiny images and panoramas.
-- Preserve original bytes and format for downloads; previews/thumbnails may be
-  JPEG. Authorize free downloads against publication and purchase-link state,
-  then redirect to a short-lived signed Storage URL.
+- Keep uploaded source originals unchanged in private `originals` storage and
+  inaccessible through public download paths. For free-download photos, generate
+  a separate full-resolution, invisibly watermarked JPEG download copy (quality
+  92, progressive/mozjpeg 4:2:0, full oriented dimensions preserved, no visible
+  watermark) in the private `photo-downloads` bucket; do not label this copy
+  byte-identical to the uploaded source. Authorize free downloads against
+  publication and purchase-link state, then redirect to a short-lived signed
+  Storage URL for `photo-downloads`.
 - A published photo can be free: an empty `microstock_url` is valid. Read its
   publication status from `status`, not from the presence of a purchase URL.
 - Use the shared licensing helper and notices: current free/external availability
   is separate from historical CC exposure. Unknown history is not proof of no grant.
   Never label every external listing CC or assume identical provider permissions.
+  Watermarking does not change a photo's license.
 - Preserve database-controlled `photo_license_history`, including minimal records
   after photo deletion. Do not rewrite `vw_public_photos` without its real definition
   and security settings. Never clear history from owner forms or backdate grants.
@@ -115,54 +121,112 @@ npm run build
 - Keep document versions/dates in the shared manifest. Prepared local revisions
   have no publication date; set the actual date when releasing. New preview metadata
   uses photographer attribution and a canonical photo reference, not a blanket grant
-  or reservation. Do not rewrite originals or existing embedded metadata.
+  or reservation. Do not rewrite private source originals or their existing embedded
+  metadata (the preview and free-download copy are separate derivative objects).
 - Clean up staged and attempted permanent objects after failed saves. Owner
-  deletion must remove both originals and thumbnails and check Storage errors
-  before reporting success or removing the database row.
+  deletion must remove originals, download copies (`photo-downloads` when present),
+  and thumbnails and check Storage errors before reporting success or removing
+  the database row.
 - Preserve the authenticated daily cleanup in `vercel.json` and its
   `CRON_SECRET` check; it removes abandoned staging files older than 24 hours.
 
-## Invisible watermark core, preview embedding, and frontend
+## Invisible watermark architecture, free-download copies, and recovery
 
-- The shared byte-based watermark core lives in `src/lib/watermark/`
-  (`core.ts`, `dct.ts`, `packet.ts`) implementing DCT/QIM profile 1 (`PDIW`,
-  version `1`, profile `1`, `Delta = 48`, 3x repetition with xorshift32
-  `0x50444957` Fisher-Yates placement, 40-byte SHA-256 framing, 512-byte cap).
-  `scripts/extract-watermark.mjs` imports the exact same core via `scripts/load-ts.cjs`.
-- `watermark-payload.ts` resolves blank text to `PADUSTOCK-IWM-v1` and enforces
-  512 UTF-8 bytes without truncation. Approved narrow exception for
-  `POST /api/photos/draft`: `UploadForm` sends `watermark_enabled` (and
-  `watermark_payload` only when enabled) exclusively to `POST /api/photos/draft`.
-  Keep the payload strictly transient on the server: never store it in the
-  database, never log it, and never send watermark fields to upload, preview,
-  analysis, or translation endpoints.
-- `POST /api/photos/draft` embeds the invisible watermark into the generated JPEG
-  preview after the visible watermark stamp (single final JPEG Q80
-  progressive/mozjpeg 4:2:0 encode), preserves explicit opt-out
-  (`watermark_enabled: false`), and rejects oversized payloads (`400`/`422`) or
-  too-small images (`422`) explicitly without truncation or silent skip.
-  Original uploads and downloads remain byte-identical.
-- Keep the compact watermark disclosure immediately above upload/review actions.
-  Default information stays outside it; payload and opt-out state survive AI
-  review and retries. Opt-out retains typed text, bypasses payload validation
-  while disabled, and omits `watermark_payload` when saving. Explanation/risk
-  links open the public `/about/hidden-watermark` page in a new tab so the form
-  is not discarded.
-- `/dashboard/extract` authenticates on the server and renders `ExtractClient`,
-  which wires `ExtractForm` to `POST /api/photos/extract` through the existing
-  authenticated signed-upload staging flow (`photo-uploads`, supporting up to
-  50 MiB including HEIC without passing large multipart bodies through Vercel
-  Functions). `POST /api/photos/extract` validates auth, ownership, and stored
-  size, runs `extractWatermarkText` from `@/lib/watermark/core`, removes the
-  temporary staged file in `finally` on processing paths (with client-side
-  best-effort cleanup on unsuccessful extract responses and the 24-hour daily
-  cleanup cron as fallback if auth or cleanup fails), never reads or writes
-  database photo rows, never logs extracted payloads, and returns explicit `422`
-  error codes for invalid/unmarked/corrupted/unsupported/non-UTF-8 files. Keep
-  `"/api/photos/extract"` in `next.config.ts` `outputFileTracingIncludes`.
-  Controlled fixture responses belong only in `tests/ui/fixture-app`. No
-  encryption or download changes are implemented here. Preserve existing visible
-  preview watermarking.
+These shared operational rules apply to all teammates and agents (watermarking,
+cryptography/data, and evaluation) and supersede all earlier preview-only and
+byte-identical free-download instructions:
+
+- **Agreed output flow**:
+  - **Preview (`thumbnails`)**: receives the existing visible watermark AND the
+    invisible watermark (oriented, resized to ≤ 1080 px long side, sRGB,
+    transparency flattened on white, visible stamp composited before invisible
+    embedding, single final JPEG quality 80 progressive/mozjpeg 4:2:0 encode,
+    plus EXIF/IPTC attribution metadata).
+  - **Free-download photo (`photo-downloads`)**: receives a separate
+    full-resolution download copy with the **same** invisible watermark payload
+    and **no visible watermark** (oriented, full dimensions preserved, sRGB,
+    transparency flattened on white, JPEG quality 92 progressive/mozjpeg 4:2:0
+    encode). Keep the uploaded source file unchanged in private `originals`
+    storage; never serve private source originals through public download paths
+    or label the re-encoded download copy byte-identical to the uploaded source.
+  - **External paid listing / draft**: gets the watermarked Padustock preview
+    only; Padustock does not create or serve a full-resolution paid download copy.
+  - **Atomic publication & verification**: create and verify all required outputs
+    (preview, and full-resolution download copy for free photos) before uploading
+    or publishing. If any required output fails or lacks capacity, reject the
+    save explicitly (`400`/`422`) and clean up staged and attempted objects with
+    no partial files or published database row left behind.
+- **Shared byte interface & role boundaries**:
+  - The shared byte-based watermark core lives in `src/lib/watermark/`
+    (`core.ts`, `dct.ts`, `packet.ts`) implementing DCT/QIM profile 1 (`PDIW`,
+    version `1`, profile `1`, `Delta = 48`, 3x repetition with xorshift32
+    `0x50444957` Fisher-Yates placement, 40-byte SHA-256 framing, 512-byte cap).
+    `scripts/extract-watermark.mjs` imports the exact same core via `scripts/load-ts.cjs`.
+  - **Wafa's crypto module owns payload fields, serialization, encryption/decryption,
+    and key handling.** The watermark core accepts and returns opaque bytes
+    (`Uint8Array`) via `embedWatermark(image, payload)` / `extractWatermark(image)`
+    — coordinate the exact byte contract with Wafa rather than inventing a second
+    crypto format or payload schema.
+  - **Sheril owns evaluation and robustness testing.** Do not alter her evaluation
+    plan or claim unmeasured attack robustness.
+- **UNRESOLVED KEY-MODEL CONFLICT (must confirm with Achmad before implementing
+  key handling or crypto UI)**:
+  - The latest proposal specifies photographer passphrase-based AES-256-GCM +
+    PBKDF2-HMAC-SHA256 (100,000 iterations, 16 B salt, 12 B nonce, 16 B auth tag,
+    stateless — no stored keys), whereas an earlier team decision specified a
+    server-managed key with no extra form field.
+  - **Do NOT implement key handling or add a passphrase input field until Achmad
+    confirms which key model is current.** Once resolved, record the single chosen
+    model here and remove this conflict notice.
+- **Verified capacity & 512 B vs. 16,384 B discrepancy**:
+  - Profile 1 capacity is `max(0, min(512, floor(B / 24) - 40))` opaque bytes
+    (where `B = floor(width / 8) * floor(height / 8)`). Example verified limits:
+    `1080×608` (16:9 preview) = 387 B; `1080×720` (3:2 preview) = 466 B;
+    `1080×810` (4:3 preview), `1080×1080` (1:1 preview), and full-resolution
+    photos (e.g., `4032×3024`) = **512 B cap** (physical uncapped 3×-repetition
+    capacity at `4032×3024` would be 7,898 B; 16,384 B at 3× repetition requires
+    ≥ 395,232 8×8 blocks ≈ 25.3 MP and cannot physically fit a 1080 px preview
+    at 1 bit per 8×8 block).
+  - The proposal's evaluation table lists test payloads from 32 B up to 16,384 B
+    (plus 44 B crypto overhead). Under Profile 1, payloads exceeding image
+    capacity or the 512 B cap are **rejected explicitly** (`400`/`422`) without
+    truncation or silent skip. Do not claim or silently implement > 512 B support
+    without an explicit, agreed algorithm/profile change.
+- **Upload form & transient payload rules**:
+  - `watermark-payload.ts` resolves blank text to `PADUSTOCK-IWM-v1` and enforces
+    512 UTF-8 bytes without truncation. Approved narrow exception for
+    `POST /api/photos/draft`: `UploadForm` sends `watermark_enabled` (and
+    `watermark_payload` only when enabled, for testing/current plaintext payload
+    integration) exclusively to `POST /api/photos/draft`.
+  - Keep payloads strictly transient on the server: never store payloads in the
+    database, never log them, and never send watermark fields to upload, preview,
+    analysis, or translation endpoints.
+  - Keep the compact watermark disclosure immediately above upload/review actions.
+    Default information stays outside it; payload and opt-out state survive AI
+    review and retries. Opt-out (`watermark_enabled: false`) retains typed text,
+    bypasses payload validation while disabled, omits `watermark_payload` on save,
+    and skips invisible watermarking on both preview and free-download copy.
+    Explanation/risk links open `/about/hidden-watermark` in a new tab.
+- **Recovery / extraction (`/dashboard/extract` and `/verify` redirect)**:
+  - Target recovery extracts the opaque watermark bytes from the submitted image,
+    then (once Wafa's crypto module and key model are integrated) decrypts and
+    authenticates them, displaying recovered data **only after authentication
+    succeeds**, with clear errors for missing, damaged, unsupported, or
+    unauthenticated payloads.
+  - `/dashboard/extract` authenticates on the server and renders `ExtractClient`
+    (with `/verify` redirecting to `/dashboard/extract` so extraction stays
+    authenticated). `ExtractClient` wires `ExtractForm` to `POST /api/photos/extract`
+    through the authenticated signed-upload staging flow (`photo-uploads`, up to
+    50 MiB including HEIC, avoiding large multipart bodies in Vercel Functions).
+  - `POST /api/photos/extract` validates auth, ownership, and stored size, runs
+    the shared core in `@/lib/watermark/core`, removes temporary staged files in
+    `finally` on processing paths (with client-side best-effort cleanup on
+    unsuccessful responses and the 24-hour daily cron as fallback), never reads
+    or writes database photo rows, never logs extracted payloads, and returns
+    explicit `422` error codes for invalid/unmarked/corrupted/unsupported/non-UTF-8
+    files. Keep `"/api/photos/extract"` in `next.config.ts`
+    `outputFileTracingIncludes`. Controlled fixture responses belong only in
+    `tests/ui/fixture-app`. Preserve existing visible preview watermarking.
 
 ## AI requests
 

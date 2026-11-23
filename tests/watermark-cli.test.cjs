@@ -194,8 +194,9 @@ test("Step 5: saved preview output from /api/photos/draft recovers exact bytes v
       .toBuffer();
     const originalSnapshot = Buffer.from(originalBytes);
 
-    async function runDraftAndSavePreview(bodyFields, outName) {
+    async function runDraftAndSaveOutputs(bodyFields, prefix) {
       const uploadedThumbnails = [];
+      const uploadedDownloads = [];
       const movedOriginals = [];
       const insertedRows = [];
       const stagedCopy = Buffer.from(originalBytes);
@@ -216,7 +217,9 @@ test("Step 5: saved preview output from /api/photos/draft recovers exact bytes v
             info: async () => ({ data: { size: stagedCopy.byteLength }, error: null }),
             download: async () => ({ data: new Blob([stagedCopy]), error: null }),
             upload: async (destPath, fileBuffer) => {
-              uploadedThumbnails.push({ bucket, destPath, buffer: Buffer.from(fileBuffer) });
+              const entry = { bucket, destPath, buffer: Buffer.from(fileBuffer) };
+              if (bucket === "photo-downloads") uploadedDownloads.push(entry);
+              else uploadedThumbnails.push(entry);
               return { error: null };
             },
             move: async (src, dst, opts) => {
@@ -254,54 +257,80 @@ test("Step 5: saved preview output from /api/photos/draft recovers exact bytes v
       assert.equal(movedOriginals.length, 1);
       assert.equal(insertedRows.length, 1);
 
-      // Original moved to `originals` bucket must remain byte-identical
+      // Private source original moved to `originals` bucket must remain byte-identical
       assert.deepEqual(movedOriginals[0].bytes, originalSnapshot);
 
       // Payload must stay transient — never persisted in the photos DB row
       assert.equal(Object.keys(insertedRows[0]).some(k => /watermark|payload/i.test(k)), false);
 
-      // Save actual preview JPEG output (with visible stamp + invisible watermark + EXIF/IPTC) to disk
-      const previewFile = path.join(tempDir, outName);
+      const previewFile = path.join(tempDir, `${prefix}-preview.jpg`);
       fs.writeFileSync(previewFile, uploadedThumbnails[0].buffer);
-      return previewFile;
+
+      let downloadFile = null;
+      if (bodyFields.publish_directly === false) {
+        assert.equal(uploadedDownloads.length, 0);
+        assert.equal(insertedRows[0].download_url, null);
+      } else {
+        assert.equal(uploadedDownloads.length, 1);
+        assert.match(insertedRows[0].download_url, /\/photo-downloads\/.+\.jpg$/);
+        downloadFile = path.join(tempDir, `${prefix}-download.jpg`);
+        fs.writeFileSync(downloadFile, uploadedDownloads[0].buffer);
+      }
+      return { previewFile, downloadFile };
     }
 
-    // 1. Blank input resolves to default PADUSTOCK-IWM-v1 and recovers exact bytes via CLI
-    const defaultPreview = await runDraftAndSavePreview(
+    // 1. Blank input resolves to default PADUSTOCK-IWM-v1 in BOTH preview and full-res download copy
+    const defaultOut = await runDraftAndSaveOutputs(
       { watermark_enabled: true, watermark_payload: "   " },
-      "draft-default-preview.jpg"
+      "draft-default"
     );
-    const defaultRaw = runCli([defaultPreview, "--raw"], { raw: true });
-    assert.equal(defaultRaw.status, 0);
-    assert.deepEqual(defaultRaw.stdout, Buffer.from("PADUSTOCK-IWM-v1", "utf8"));
-    const defaultJson = runCli([defaultPreview, "--json"]);
-    assert.equal(defaultJson.status, 0, defaultJson.stderr);
-    assert.equal(JSON.parse(defaultJson.stdout).payload, "PADUSTOCK-IWM-v1");
+    for (const file of [defaultOut.previewFile, defaultOut.downloadFile]) {
+      const raw = runCli([file, "--raw"], { raw: true });
+      assert.equal(raw.status, 0);
+      assert.deepEqual(raw.stdout, Buffer.from("PADUSTOCK-IWM-v1", "utf8"));
+      const json = runCli([file, "--json"]);
+      assert.equal(json.status, 0, json.stderr);
+      assert.equal(JSON.parse(json.stdout).payload, "PADUSTOCK-IWM-v1");
+    }
+    const dlMeta = await sharp(defaultOut.downloadFile).metadata();
+    assert.deepEqual([dlMeta.width, dlMeta.height], [1600, 1000]);
 
-    // 2. Custom Indonesian + emoji + multiline + whitespace payload recovers exact bytes via CLI
+    // 2. Custom Indonesian + emoji + multiline + whitespace payload recovers exact bytes in BOTH outputs
     const customPayload = "  Desa Padusan 🌿\nLangkah 5 — uji simpan\t ";
-    const customPreview = await runDraftAndSavePreview(
+    const customOut = await runDraftAndSaveOutputs(
       { watermark_enabled: true, watermark_payload: customPayload },
-      "draft-custom-preview.jpg"
+      "draft-custom"
     );
-    const customRaw = runCli([customPreview, "--raw"], { raw: true });
-    assert.equal(customRaw.status, 0);
-    assert.deepEqual(customRaw.stdout, Buffer.from(customPayload, "utf8"));
-    const customJson = runCli([customPreview, "--json"]);
-    assert.equal(customJson.status, 0, customJson.stderr);
-    const parsedCustom = JSON.parse(customJson.stdout);
-    assert.equal(parsedCustom.payload, customPayload);
-    assert.equal(parsedCustom.byteLength, Buffer.byteLength(customPayload, "utf8"));
+    for (const file of [customOut.previewFile, customOut.downloadFile]) {
+      const raw = runCli([file, "--raw"], { raw: true });
+      assert.equal(raw.status, 0);
+      assert.deepEqual(raw.stdout, Buffer.from(customPayload, "utf8"));
+      const json = runCli([file, "--json"]);
+      assert.equal(json.status, 0, json.stderr);
+      const parsed = JSON.parse(json.stdout);
+      assert.equal(parsed.payload, customPayload);
+      assert.equal(parsed.byteLength, Buffer.byteLength(customPayload, "utf8"));
+    }
 
-    // 3. Explicit opt-out produces a valid preview JPEG with NO invisible watermark
-    const optOutPreview = await runDraftAndSavePreview(
+    // 3. Explicit opt-out produces preview AND full-res download copy with NO invisible watermark
+    const optOut = await runDraftAndSaveOutputs(
       { watermark_enabled: false },
-      "draft-optout-preview.jpg"
+      "draft-optout"
     );
-    const optOutJson = runCli([optOutPreview, "--json"]);
-    assert.equal(optOutJson.status, 1);
-    assert.equal(optOutJson.stdout, "");
-    assert.equal(JSON.parse(optOutJson.stderr).code, "NO_WATERMARK");
+    for (const file of [optOut.previewFile, optOut.downloadFile]) {
+      const json = runCli([file, "--json"]);
+      assert.equal(json.status, 1);
+      assert.equal(json.stdout, "");
+      assert.equal(JSON.parse(json.stderr).code, "NO_WATERMARK");
+    }
+
+    // 4. Paid/external draft produces watermarked preview ONLY and no full-resolution download copy
+    const paidDraft = await runDraftAndSaveOutputs(
+      { publish_directly: false, watermark_enabled: true, watermark_payload: "PADUSTOCK-IWM-v1" },
+      "draft-paid"
+    );
+    assert.equal(paidDraft.downloadFile, null);
+    assert.equal(JSON.parse(runCli([paidDraft.previewFile, "--json"]).stdout).payload, "PADUSTOCK-IWM-v1");
 
     // Verify custom payload was never logged anywhere on the server
     assert.equal(JSON.stringify(logged).includes(customPayload), false);

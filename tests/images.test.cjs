@@ -4,7 +4,11 @@ const fs = require("node:fs");
 const sharp = require("sharp");
 const { loadTs } = require("./helpers/load-ts.cjs");
 const moduleCache = new Map();
-const { processImageForStorage } = loadTs("src/lib/server/image-processing.ts", {}, moduleCache);
+const { processImageForStorage, createWatermarkedDownloadCopy, DOWNLOAD_COPY_JPEG_QUALITY } = loadTs(
+  "src/lib/server/image-processing.ts",
+  {},
+  moduleCache
+);
 const { embedMetadata } = loadTs("src/lib/server/exif-writer.ts", {}, moduleCache);
 const { extractWatermark, extractWatermarkText, encodeWatermarkText, WatermarkError } = loadTs(
   "src/lib/watermark/core.ts",
@@ -103,6 +107,81 @@ test("processImageForStorage embeds invisible watermark in preview and survives 
     .toBuffer();
   await assert.rejects(
     processImageForStorage(tiny, { invisibleWatermarkPayload: encodeWatermarkText("PADUSTOCK-IWM-v1") }),
+    err => err instanceof WatermarkError && err.code === "IMAGE_TOO_SMALL"
+  );
+});
+
+test("createWatermarkedDownloadCopy preserves full oriented dimensions, has no visible watermark, embeds payload, and keeps source unchanged", async () => {
+  const width = 1400;
+  const height = 960;
+  const rgb = Buffer.alloc(width * height * 3);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const off = (y * width + x) * 3;
+      rgb[off] = Math.min(255, Math.round(40 + (170 * x) / width + 18 * Math.sin(x / 17)));
+      rgb[off + 1] = Math.min(255, Math.round(50 + (155 * y) / height + 16 * Math.cos(y / 19)));
+      rgb[off + 2] = Math.min(255, Math.round(60 + (135 * (width - x)) / width));
+    }
+  }
+
+  // Use EXIF orientation 6 so full oriented dimensions become 960x1400
+  const sourceJpeg = await sharp(rgb, { raw: { width, height, channels: 3 } })
+    .jpeg({ quality: 95 })
+    .withMetadata({ orientation: 6 })
+    .toBuffer();
+  const sourceSnapshot = Buffer.from(sourceJpeg);
+
+  const payloadText = "  Desa Padusan 🌿\nUnduhan Penuh\t ";
+  const download = await createWatermarkedDownloadCopy(sourceJpeg, encodeWatermarkText(payloadText));
+  assert.deepEqual([download.width, download.height], [960, 1400]);
+  assert.equal(download.contentType, "image/jpeg");
+  assert.equal(download.extension, "jpg");
+  assert.equal(download.jpegQuality, DOWNLOAD_COPY_JPEG_QUALITY);
+
+  const meta = await sharp(download.downloadBuffer).metadata();
+  assert.equal(meta.format, "jpeg");
+  assert.deepEqual([meta.width, meta.height], [960, 1400]);
+  assert.equal(meta.isProgressive, true);
+
+  // Re-open and extract exact payload from full-resolution download copy
+  const extracted = await extractWatermarkText(download.downloadBuffer);
+  assert.equal(extracted.payload, payloadText);
+  assert.equal(extracted.byteLength, Buffer.byteLength(payloadText, "utf8"));
+
+  // Verify NO visible watermark was composited onto the full-resolution download copy
+  const cleanFullRes = await sharp(sourceJpeg)
+    .rotate()
+    .flatten({ background: "#ffffff" })
+    .toColourspace("srgb")
+    .removeAlpha()
+    .raw()
+    .toBuffer();
+  const downloadRgb = await sharp(download.downloadBuffer).toColourspace("srgb").removeAlpha().raw().toBuffer();
+  let sumSq = 0;
+  for (let i = 0; i < cleanFullRes.length; i++) {
+    const diff = cleanFullRes[i] - downloadRgb[i];
+    sumSq += diff * diff;
+  }
+  const psnrVsClean = 10 * Math.log10((255 * 255) / (sumSq / cleanFullRes.length));
+  assert.ok(psnrVsClean >= 42, `Expected full-res download without visible stamp to stay >= 42 dB vs clean source, got ${psnrVsClean.toFixed(2)} dB`);
+
+  // Source bytes remain unchanged
+  assert.deepEqual(sourceJpeg, sourceSnapshot);
+
+  // Opt-out produces full-resolution JPEG Q92 with no invisible watermark
+  const optOut = await createWatermarkedDownloadCopy(sourceJpeg, null);
+  assert.deepEqual([optOut.width, optOut.height], [960, 1400]);
+  await assert.rejects(
+    extractWatermark(optOut.downloadBuffer),
+    err => err instanceof WatermarkError && err.code === "NO_WATERMARK"
+  );
+
+  // Too-small image rejects explicitly
+  const tiny = await sharp({ create: { width: 200, height: 200, channels: 3, background: "#44aa99" } })
+    .jpeg()
+    .toBuffer();
+  await assert.rejects(
+    createWatermarkedDownloadCopy(tiny, encodeWatermarkText("PADUSTOCK-IWM-v1")),
     err => err instanceof WatermarkError && err.code === "IMAGE_TOO_SMALL"
   );
 });

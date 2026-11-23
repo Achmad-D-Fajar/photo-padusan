@@ -21,13 +21,13 @@ are bundled with their licenses in `src/assets/fonts` and loaded through
 - **Photo detail pages** – Every photo has its own page (`/photo/[id]`).
 - **Photographer profiles** – View all works by a photographer (`/photographer/[username]`).
 - **Upload dashboard** – Registered users upload their work at `/dashboard/upload`.
-- **Invisible watermark preview embedding** – Immediately above the upload/review actions, a compact “Edit watermark (opsional)” disclosure offers a 512-byte UTF-8 payload and an opt-out button. The default message stays visible outside the disclosure. Blank input resolves to `PADUSTOCK-IWM-v1`; other text is preserved exactly. On save (`/api/photos/draft`), the resolved payload is embedded into the generated JPEG preview (after the visible watermark, using the shared DCT/QIM profile 1 core in `src/lib/watermark/core.ts`), while original uploads and downloads remain byte-identical. Opting out skips invisible embedding while retaining typed text in the form. Oversized payloads or images too small for the packet are rejected explicitly without truncation.
+- **Invisible watermark embedding (preview + free-download copy)** – Immediately above the upload/review actions, a compact “Edit watermark (opsional)” disclosure offers a 512-byte UTF-8 payload and an opt-out button. Blank input resolves to `PADUSTOCK-IWM-v1`; other text is preserved exactly. On save (`POST /api/photos/draft`), the resolved payload is embedded and verified in the generated JPEG preview (after the visible watermark, JPEG Q80 progressive/mozjpeg 4:2:0) and—for published free photos—also in a separate full-resolution JPEG download copy (JPEG Q92 progressive/mozjpeg 4:2:0, full oriented dimensions, no visible watermark) stored in the private `photo-downloads` bucket. Uploaded source files stay unchanged in private `originals` storage and are not served via public download paths. External paid listings receive only the watermarked Padustock preview. Opting out skips invisible watermarking while retaining typed text in the form; oversized payloads or too-small images are rejected explicitly with atomic cleanup.
 - **Standalone CLI extractor** – `npm run extract:watermark -- <image-path>` (`scripts/extract-watermark.mjs`) extracts and verifies watermark bytes/UTF-8 text from saved images using the exact same shared core (`src/lib/watermark/core.ts`), with `--raw`, `--hex`, and `--json` modes.
-- **Hidden watermark explanation** – Public `/about/hidden-watermark` explains the preview-only embedding scope, opt-out consequences, current unconnected web extraction state, and limitations. Upload links open it in a new tab to preserve form state; the risk acknowledgment links directly to `#risiko`. No unique photo identifier or source URL is automatically embedded in the shared default payload.
-- **Web extraction** – Authenticated `/dashboard/extract` offers local file selection, a full-image preview (with a fallback for browser-unsupported formats), and real extraction backed by `POST /api/photos/extract` using the exact same shared core (`src/lib/watermark/core.ts`). Selected files stage through the existing private `photo-uploads` signed-upload flow and are cleaned up after extraction (with best-effort client cleanup on failed responses and the daily 24-hour cleanup cron as fallback if auth or storage cleanup fails); explicit errors are shown for unmarked, corrupted, unsupported, integrity-failed, or non-UTF-8 files. Encryption, structured metadata payloads, and download changes remain deferred.
+- **Hidden watermark explanation** – Public `/about/hidden-watermark` explains preview + free-download watermarking, private untouched sources, opt-out consequences, and limitations. Upload links open it in a new tab to preserve form state; the risk acknowledgment links directly to `#risiko`. No unique photo identifier or source URL is automatically embedded in the shared default payload.
+- **Web extraction** – Authenticated `/dashboard/extract` (with `/verify` redirecting to `/dashboard/extract`) offers local file selection, a full-image preview (with a fallback for browser-unsupported formats), and real extraction backed by `POST /api/photos/extract` using the exact same shared core (`src/lib/watermark/core.ts`). Selected files stage through the existing private `photo-uploads` signed-upload flow and are cleaned up after extraction (with best-effort client cleanup on failed responses and the daily 24-hour cleanup cron as fallback if auth or storage cleanup fails); explicit errors are shown for unmarked, corrupted, unsupported, integrity-failed, or non-UTF-8 files. Cryptography/key handling and structured ownership certificates remain coordinated with Wafa pending the key-model decision.
 - **AI-assisted captions** – Google Gemini helps generate photo descriptions, with the option to write captions and tags manually.
 - **Image & EXIF handling** – Server-side processing with `sharp` and `piexifjs`.
-- **50 MB photo uploads, including HEIC/HEIF** – Files upload directly to Supabase; HEIC is decoded on the server and shown as a JPEG preview. Original downloads preserve the uploaded format.
+- **50 MB photo uploads, including HEIC/HEIF** – Files upload directly to Supabase; HEIC is decoded on the server for previews and full-resolution free-download JPEG copies while the original source file remains untouched in private `originals` storage.
 - **Authentication** – Register / log in with Supabase Auth; `/dashboard/*` is protected by middleware.
 - **Automatic licensing** – Published photos without purchase links use [CC BY-NC-ND 4.0](https://creativecommons.org/licenses/by-nc-nd/4.0/). External listings direct visitors to the provider's applicable licensing process; a preview does not itself grant general reuse permission. Valid prior CC grants continue after link/status changes.
 
@@ -57,6 +57,7 @@ are bundled with their licenses in `src/assets/fonts` and loaded through
 | `/login`, `/register` | Authentication | Logged-out only |
 | `/dashboard/*` | Dashboard, including `/dashboard/upload` | Logged-in only |
 | `/dashboard/extract` | Authenticated invisible-watermark extraction using the shared core | Logged-in only |
+| `/verify` | Redirects to `/dashboard/extract` (keeps extraction authenticated) | Redirects to `/dashboard/extract` |
 
 Access rules are enforced in `middleware.ts`, which also refreshes Supabase sessions. Unauthenticated users are redirected to `/login`, and logged-in users are redirected from `/login` and `/register` to `/dashboard`.
 
@@ -124,14 +125,17 @@ CRON_SECRET=your-long-random-secret
 
 ### 4. Run the development server
 
-Before running the updated upload flow, apply
+Before running the updated upload and download flows, apply
 [`supabase/migrations/202610240001_photo_uploads.sql`](supabase/migrations/202610240001_photo_uploads.sql)
-in the Supabase SQL editor (or with your normal migration runner). It creates a
-private `photo-uploads` staging bucket, raises the `originals` bucket limit to
-50 MiB, adds owner storage policies, and installs an atomic limit of 20 AI
-requests per user per hour shared by translation and analysis. The project's
-global Storage file size limit must also allow at least 50 MiB. Existing
-`originals` and `thumbnails` buckets and photo/profile policies are still required.
+and [`supabase/migrations/202611240001_watermarked_downloads.sql`](supabase/migrations/202611240001_watermarked_downloads.sql)
+in the Supabase SQL editor (or with your normal migration runner). They create a
+private `photo-uploads` staging bucket, ensure `originals` stays private (50 MiB),
+create a private `photo-downloads` bucket for full-resolution watermarked JPEG
+free-download copies, add `photos.download_url`, add owner storage policies, and
+install an atomic limit of 20 AI requests per user per hour shared by translation
+and analysis. The project's global Storage file size limit must also allow at
+least 50 MiB. Existing `originals` and `thumbnails` buckets and photo/profile
+policies are still required.
 
 The browser sends image bytes directly to Storage because Vercel Functions
 limit request bodies to 4.5 MB. Processing routes accept JSON references to the

@@ -50,7 +50,12 @@ function draftHarness(failure) {
     storage: { from: bucket => ({
       info: async () => ({ data: { size: failure === "oversize" ? 50 * 1024 * 1024 + 1 : 100 }, error: null }),
       download: async () => { calls.push(["download"]); return { data: new Blob(["test"]), error: null }; },
-      upload: async path => { calls.push(["upload", bucket, path]); return { error: failure === "thumbnail" ? new Error("Upload failed") : null }; },
+      upload: async path => {
+        calls.push(["upload", bucket, path]);
+        if (failure === "thumbnail" && bucket === "thumbnails") return { error: new Error("Upload failed") };
+        if (failure === "download-upload" && bucket === "photo-downloads") return { error: new Error("Download upload failed") };
+        return { error: null };
+      },
       move: async (source, destination) => { calls.push(["move", source, destination]); return { error: null }; },
       getPublicUrl: path => ({ data: { publicUrl: `https://example.test/storage/v1/object/public/${bucket}/${path}` } }),
       remove: async paths => { calls.push(["remove", bucket, paths]); return { error: null }; },
@@ -59,17 +64,33 @@ function draftHarness(failure) {
   const route = loadTs("src/app/api/photos/draft/route.ts", {
     "@/lib/supabase/server": { createClient: async () => supabase },
     "@/lib/supabase/admin": { createAdminClient: () => supabase },
-    "@/lib/server/image-processing": { processImageForStorage: async (_raw, options) => {
-      calls.push(["process", options]);
-      if (failure === "decode") throw new Error("Decode failed");
-      if (failure === "watermark-too-small") {
-        throw new WatermarkError("IMAGE_TOO_SMALL", "Dimensi gambar terlalu kecil untuk watermark tersembunyi.");
-      }
-      if (failure === "watermark-capacity") {
-        throw new WatermarkError("CAPACITY_EXCEEDED", "Payload melebihi kapasitas maksimum gambar ini.");
-      }
-      return { watermarkedBuffer: Buffer.from("jpeg") };
-    } },
+    "@/lib/server/image-processing": {
+      processImageForStorage: async (_raw, options) => {
+        calls.push(["process", options]);
+        if (failure === "decode") throw new Error("Decode failed");
+        if (failure === "watermark-too-small") {
+          throw new WatermarkError("IMAGE_TOO_SMALL", "Dimensi gambar terlalu kecil untuk watermark tersembunyi.");
+        }
+        if (failure === "watermark-capacity") {
+          throw new WatermarkError("CAPACITY_EXCEEDED", "Payload melebihi kapasitas maksimum gambar ini.");
+        }
+        return { watermarkedBuffer: Buffer.from("jpeg") };
+      },
+      createWatermarkedDownloadCopy: async (_raw, payload) => {
+        calls.push(["download-copy", payload]);
+        if (failure === "download-copy-capacity") {
+          throw new WatermarkError("CAPACITY_EXCEEDED", "Payload melebihi kapasitas salinan unduhan.");
+        }
+        return {
+          downloadBuffer: Buffer.from("fullres-jpeg"),
+          width: 1600,
+          height: 1000,
+          contentType: "image/jpeg",
+          extension: "jpg",
+          jpegQuality: 92,
+        };
+      },
+    },
     "@/lib/server/exif-writer": { embedMetadata: (bytes, metadata) => { calls.push(["metadata", metadata]); return bytes; } },
   }, cache);
   return {
@@ -106,25 +127,63 @@ test("thumbnail upload failures clean the staged original", async () => {
   assert.ok(!calls.some(([name]) => name === "move"));
 });
 
-test("database failures clean staging, thumbnail, and permanent original", async () => {
+test("database failures clean staging, thumbnail, download copy, and permanent original", async () => {
   const { calls, post } = draftHarness("database");
   assert.equal((await post(uploadPath)).status, 500);
-  assert.deepEqual(calls.filter(([name]) => name === "remove").map(([, bucket]) => bucket).sort(), ["originals", "photo-uploads", "thumbnails"]);
+  assert.deepEqual(
+    calls.filter(([name]) => name === "remove").map(([, bucket]) => bucket).sort(),
+    ["originals", "photo-downloads", "photo-uploads", "thumbnails"]
+  );
 });
 
-test("successful publication retains the HEIC extension and free download state", async () => {
+test("download copy generation or upload failures fail atomically without leaving partial files or DB rows", async () => {
+  // Derivative generation failure creates zero permanent objects
+  {
+    const { calls, post } = draftHarness("download-copy-capacity");
+    assert.equal((await post(uploadPath)).status, 422);
+    assert.ok(!calls.some(([name]) => name === "upload" || name === "move" || name === "insert"));
+    assert.ok(calls.some(([name, bucket]) => name === "remove" && bucket === "photo-uploads"));
+  }
+
+  // Download-copy upload failure cleans up already-uploaded thumbnail and staged file
+  {
+    const { calls, post } = draftHarness("download-upload");
+    assert.equal((await post(uploadPath)).status, 502);
+    assert.ok(!calls.some(([name]) => name === "move" || name === "insert"));
+    assert.deepEqual(
+      calls.filter(([name]) => name === "remove").map(([, bucket]) => bucket).sort(),
+      ["photo-downloads", "photo-uploads", "thumbnails"]
+    );
+  }
+});
+
+test("successful free publication creates download copy while retaining private HEIC source", async () => {
   const { calls, post } = draftHarness();
   assert.equal((await post(uploadPath)).status, 201);
   const processCall = calls.find(([name]) => name === "process");
+  const downloadCall = calls.find(([name]) => name === "download-copy");
   assert.equal(Buffer.from(processCall[1].invisibleWatermarkPayload).toString("utf8"), "PADUSTOCK-IWM-v1");
+  assert.equal(Buffer.from(downloadCall[1]).toString("utf8"), "PADUSTOCK-IWM-v1");
   const photo = calls.find(([name]) => name === "insert")[1];
   assert.equal(photo.status, "published");
   assert.equal(photo.microstock_url, null);
   assert.match(photo.image_url, /\.heic$/);
+  assert.match(photo.download_url, /\/photo-downloads\/.+\.jpg$/);
   const metadata = calls.find(([name]) => name === "metadata")[1];
   assert.ok(metadata.photoPageUrl.endsWith(`/photo/${photo.id}`));
   assert.ok(!/All rights reserved|CC BY|creativecommons/.test(metadata.copyright));
   assert.ok(!calls.some(([name]) => name === "remove"));
+});
+
+test("draft/external upload creates watermarked preview only and no download copy", async () => {
+  const { calls, post } = draftHarness();
+  assert.equal((await post(uploadPath, { publish_directly: false })).status, 201);
+  assert.ok(calls.some(([name]) => name === "process"));
+  assert.ok(!calls.some(([name]) => name === "download-copy"));
+  assert.ok(!calls.some(([name, bucket]) => name === "upload" && bucket === "photo-downloads"));
+  const photo = calls.find(([name]) => name === "insert")[1];
+  assert.equal(photo.status, "draft");
+  assert.equal(photo.download_url, null);
 });
 
 test("draft forwards custom UTF-8 payload, respects opt-out, and rejects invalid/oversized payloads", async () => {
@@ -181,25 +240,25 @@ test("draft forwards custom UTF-8 payload, respects opt-out, and rejects invalid
 });
 
 for (const storageFailure of [false, true]) {
-  test(`delete ${storageFailure ? "keeps the database row on storage error" : "removes both image objects before the row"}`, async () => {
+  test(`delete ${storageFailure ? "keeps the database row on storage error" : "removes originals, download copy, and thumbnails before the row"}`, async () => {
     const calls = [];
     const supabase = {
       auth: { getUser: async () => ({ data: { user: { id: userId } }, error: null }) },
-      from: () => ({ select() { return this; }, eq() { return this; }, delete() { calls.push("delete-row"); return this; }, single: async () => ({ data: { id: "photo", image_url: `https://example.test/storage/v1/object/public/originals/${userId}/original.heic`, thumbnail_url: `https://example.test/storage/v1/object/public/thumbnails/${userId}/preview.jpg` }, error: null }) }),
+      from: () => ({ select() { return this; }, eq() { return this; }, delete() { calls.push("delete-row"); return this; }, single: async () => ({ data: { id: "photo", image_url: `https://example.test/storage/v1/object/public/originals/${userId}/original.heic`, download_url: `https://example.test/storage/v1/object/public/photo-downloads/${userId}/download.jpg`, thumbnail_url: `https://example.test/storage/v1/object/public/thumbnails/${userId}/preview.jpg` }, error: null }) }),
       storage: { from: bucket => ({ remove: async () => { calls.push(bucket); return { error: storageFailure ? new Error("Storage unavailable") : null }; } }) },
     };
     const route = loadTs("src/app/api/photos/[id]/route.ts", { "@/lib/supabase/server": { createClient: async () => supabase } });
     const response = await route.DELETE(new Request("http://localhost/api/photos/photo", { method: "DELETE" }), { params: Promise.resolve({ id: "photo" }) });
     assert.equal(response.status, storageFailure ? 500 : 200);
-    assert.deepEqual(calls, storageFailure ? ["originals"] : ["originals", "thumbnails", "delete-row"]);
+    assert.deepEqual(calls, storageFailure ? ["originals"] : ["originals", "photo-downloads", "thumbnails", "delete-row"]);
   });
 }
 
-test("large downloads redirect to storage with the original file extension", async () => {
+test("free downloads redirect to photo-downloads signed URL and never expose private originals", async () => {
   let signed;
   const admin = {
-    from: () => ({ select() { return this; }, eq() { return this; }, single: async () => ({ data: { image_url: `https://example.test/storage/v1/object/public/originals/${userId}/original.heic` } }) }),
-    storage: { from: () => ({ createSignedUrl: async (path, seconds, options) => { signed = { path, seconds, options }; return { data: { signedUrl: "https://example.test/download" }, error: null }; } }) },
+    from: () => ({ select() { return this; }, eq() { return this; }, single: async () => ({ data: { download_url: `https://example.test/storage/v1/object/public/photo-downloads/${userId}/download_photo.jpg`, microstock_url: null } }) }),
+    storage: { from: bucket => ({ createSignedUrl: async (path, seconds, options) => { signed = { bucket, path, seconds, options }; return { data: { signedUrl: "https://example.test/download" }, error: null }; } }) },
   };
   const route = loadTs("src/app/api/photos/download/[id]/route.ts", {
     "@/lib/supabase/server": { createClient: async () => ({ from: () => ({ select() { return this; }, eq() { return this; }, single: async () => ({ data: { id: "photo", user_id: userId, caption_id: "Sawah", microstock_url: null }, error: null }) }) }) },
@@ -208,8 +267,20 @@ test("large downloads redirect to storage with the original file extension", asy
   const response = await route.GET(new Request("http://localhost"), { params: Promise.resolve({ id: "22222222-2222-4222-8222-222222222222" }) });
   assert.equal(response.status, 307);
   assert.equal(response.headers.get("location"), "https://example.test/download");
-  assert.equal(signed.options.download, "sawah-padustock.heic");
+  assert.equal(signed.bucket, "photo-downloads");
+  assert.equal(signed.options.download, "sawah-padustock.jpg");
   assert.equal(response.headers.get("cache-control"), "no-store");
+
+  // Missing download_url must return 404 rather than falling back to private originals
+  const missingAdmin = {
+    from: () => ({ select() { return this; }, eq() { return this; }, single: async () => ({ data: { download_url: null, microstock_url: null } }) }),
+    storage: { from: () => { throw new Error("Must not sign private originals"); } },
+  };
+  const missingRoute = loadTs("src/app/api/photos/download/[id]/route.ts", {
+    "@/lib/supabase/server": { createClient: async () => ({ from: () => ({ select() { return this; }, eq() { return this; }, single: async () => ({ data: { id: "photo", user_id: userId, caption_id: "Sawah", microstock_url: null }, error: null }) }) }) },
+    "@/lib/supabase/admin": { createAdminClient: () => missingAdmin },
+  });
+  assert.equal((await missingRoute.GET(new Request("http://localhost"), { params: Promise.resolve({ id: "22222222-2222-4222-8222-222222222222" }) })).status, 404);
 });
 
 test("editing a published free photo preserves its public status and null purchase URL", async () => {

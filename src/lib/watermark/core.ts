@@ -22,6 +22,10 @@ const PROFILE_1_JPEG_OPTIONS = {
   chromaSubsampling: "4:2:0",
 } as const;
 
+export interface EmbedWatermarkOptions {
+  jpegQuality?: number;
+}
+
 export interface ExtractedWatermark {
   payload: Uint8Array;
   byteLength: number;
@@ -110,21 +114,25 @@ async function decodeImageToSrgbRgb(image: Buffer): Promise<DecodedSrgbImage> {
   }
 }
 
-export async function embedWatermark(image: Buffer, payload: Uint8Array): Promise<Buffer> {
+export async function embedWatermarkRawRgb(
+  rgb: Uint8Array,
+  width: number,
+  height: number,
+  payload: Uint8Array,
+  options: EmbedWatermarkOptions = {}
+): Promise<Buffer> {
   if (!(payload instanceof Uint8Array)) {
     throw new WatermarkError("CAPACITY_EXCEEDED", "Payload harus berupa Uint8Array.");
   }
 
-  const decoded = await decodeImageToSrgbRgb(image);
-  const capacity = getWatermarkCapacityDetails(decoded.width, decoded.height);
-
+  const capacity = getWatermarkCapacityDetails(width, height);
   if (!capacity.canEmbedEmptyPayload) {
     throw new WatermarkError(
       "IMAGE_TOO_SMALL",
-      `Dimensi gambar (${decoded.width}x${decoded.height}) terlalu kecil untuk watermark tersembunyi (minimal 960 blok 8x8).`,
+      `Dimensi gambar (${width}x${height}) terlalu kecil untuk watermark tersembunyi (minimal 960 blok 8x8).`,
       {
-        width: decoded.width,
-        height: decoded.height,
+        width,
+        height,
         completeBlocks: capacity.completeBlocks,
         capacityBytes: 0,
       }
@@ -144,15 +152,29 @@ export async function embedWatermark(image: Buffer, payload: Uint8Array): Promis
     );
   }
 
+  const jpegQuality = options.jpegQuality ?? PROFILE_1_JPEG_OPTIONS.quality;
   const packet = encodePacket(payload);
-  const embeddedRgb = embedPacketInRgb(decoded.rgb, decoded.width, decoded.height, packet);
+  const embeddedRgb = embedPacketInRgb(rgb, width, height, packet);
 
   return sharp(Buffer.from(embeddedRgb.buffer, embeddedRgb.byteOffset, embeddedRgb.byteLength), {
-    raw: { width: decoded.width, height: decoded.height, channels: 3 },
+    raw: { width, height, channels: 3 },
   })
     .toColourspace("srgb")
-    .jpeg(PROFILE_1_JPEG_OPTIONS)
+    .jpeg({ ...PROFILE_1_JPEG_OPTIONS, quality: jpegQuality })
     .toBuffer();
+}
+
+export async function embedWatermark(
+  image: Buffer,
+  payload: Uint8Array,
+  options: EmbedWatermarkOptions = {}
+): Promise<Buffer> {
+  if (!(payload instanceof Uint8Array)) {
+    throw new WatermarkError("CAPACITY_EXCEEDED", "Payload harus berupa Uint8Array.");
+  }
+
+  const decoded = await decodeImageToSrgbRgb(image);
+  return embedWatermarkRawRgb(decoded.rgb, decoded.width, decoded.height, payload, options);
 }
 
 export async function extractWatermark(image: Buffer): Promise<ExtractedWatermark> {
