@@ -62,7 +62,7 @@ test("extraction route independently requires an authenticated server session", 
   for (const error of [null, { message: "expired" }]) {
     const { default: page } = loadTs("src/app/dashboard/extract/page.tsx", {
       "@/lib/supabase/server": { createClient: async () => ({ auth: { getUser: async () => ({ data: { user: error ? { id: "owner" } : null }, error }) } }) },
-      "@/components/dashboard/ExtractForm": { default: () => null },
+      "@/components/dashboard/ExtractClient": { default: () => null },
       "next/navigation": { redirect: location => { throw new Error(`redirect:${location}`); } },
     });
     await assert.rejects(page(), /redirect:\/login/);

@@ -23,30 +23,94 @@ async function trackUrls(page: Page) {
   });
 }
 
-test("extraction is authenticated, unavailable in production, and uses local previews", async ({ page }, info) => {
+test("extraction is authenticated, stages through signed uploads, displays results/errors, and cleans local previews", async ({ page }, info) => {
   await page.goto("/dashboard/extract");
   await expect(page).toHaveURL(/\/login$/);
   await login(page);
   await trackUrls(page);
+
+  let extractAttempt = 0;
+  const extractRequests: Record<string, unknown>[] = [];
+  const cleanupPaths: string[] = [];
+  await page.route("**/api/photos/upload", async route => {
+    const method = route.request().method();
+    if (method === "DELETE") {
+      const body = route.request().postDataJSON();
+      if (body?.path) cleanupPaths.push(String(body.path));
+      return route.fulfill({ json: { success: true } });
+    }
+    return route.fulfill({
+      json: {
+        success: true,
+        data: {
+          path: "11111111-1111-4111-8111-111111111111/extract-test.png",
+          token: "fixture-token",
+          contentType: "image/png",
+        },
+      },
+    });
+  });
+  await page.route("**/storage/v1/object/upload/sign/**", route =>
+    route.fulfill({ json: { Key: "fixture", Id: "fixture" } })
+  );
+  await page.route("**/api/photos/extract", async route => {
+    extractAttempt++;
+    const body = route.request().postDataJSON();
+    if (body) extractRequests.push(body);
+    if (extractAttempt === 1) {
+      return route.fulfill({
+        status: 200,
+        json: {
+          success: true,
+          data: {
+            payload,
+            byteLength: Buffer.byteLength(payload, "utf8"),
+            version: 1,
+            profile: 1,
+          },
+        },
+      });
+    }
+    return route.fulfill({
+      status: 422,
+      json: {
+        success: false,
+        code: "NO_WATERMARK",
+        error: "Watermark tersembunyi yang didukung tidak terdeteksi.",
+      },
+    });
+  });
+
   await page.goto("/dashboard/extract");
   await expect(page.getByRole("heading", { name: "Ekstraksi watermark" })).toBeVisible();
   if ((page.viewportSize()?.width ?? 0) < 1024) await page.getByRole("button", { name: "Buka menu navigasi" }).click();
   await expect(page.getByRole("link", { name: "Ekstraksi", exact: true })).toBeVisible();
   if ((page.viewportSize()?.width ?? 0) < 1024) await page.getByRole("button", { name: "Buka menu navigasi" }).evaluate(button => button.blur());
   await expect(page.getByRole("button", { name: "Ekstrak payload" })).toBeDisabled();
-  await expect(page.getByText("Fitur ekstraksi belum terhubung", { exact: true })).toBeVisible();
-  const sent: string[] = [];
-  page.on("request", request => { if (request.method() !== "GET") sent.push(request.url()); });
+  await expect(page.getByText(/Belum ada hasil/)).toBeVisible();
+
   await page.getByLabel(/Pilih gambar/).setInputFiles(image);
   const preview = page.getByRole("img", { name: "Pratinjau penuh padusan.png" });
   await expect(preview).toBeVisible();
   expect(await preview.evaluate(node => getComputedStyle(node).objectFit)).toBe("contain");
   await expect(page.getByText("padusan.png", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Ekstrak payload" })).toBeEnabled();
+
+  // First run: verified payload extraction
+  await page.getByRole("button", { name: "Ekstrak payload" }).click();
+  const output = page.getByLabel("Teks payload hasil ekstraksi");
+  await expect(output).toHaveText(payload);
+  await expect(page.getByText(`${Buffer.byteLength(payload)} byte UTF-8`, { exact: false })).toBeVisible();
+  expect(extractRequests).toEqual([{ path: "11111111-1111-4111-8111-111111111111/extract-test.png" }]);
+
+  // Second run: explicit NO_WATERMARK error from /api/photos/extract
   await page.getByLabel(/Pilih gambar/).setInputFiles({ name: "kamera.heic", mimeType: "", buffer: Buffer.from("local undecodable HEIC fixture") });
   await expect(page.getByText(/Pratinjau tidak tersedia di browser ini/)).toBeVisible();
   await expect(page.getByText("kamera.heic", { exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Ekstrak payload" })).toBeDisabled();
-  expect(sent).toEqual([]);
+  await page.getByRole("button", { name: "Ekstrak payload" }).click();
+  await expect(page.getByRole("alert").filter({ hasText: "Watermark tersembunyi yang didukung tidak terdeteksi." })).toBeVisible();
+  expect(cleanupPaths).toEqual(["11111111-1111-4111-8111-111111111111/extract-test.png"]);
+
   const originalViewport = page.viewportSize()!;
   for (const width of [320, 375, 414, 768]) {
     await page.setViewportSize({ width, height: 900 });
@@ -54,7 +118,7 @@ test("extraction is authenticated, unavailable in production, and uses local pre
     await page.screenshot({ path: info.outputPath(`extract-${width}.png`), fullPage: true });
   }
   await page.setViewportSize(originalViewport);
-  await page.screenshot({ path: info.outputPath("extract-unavailable.png"), fullPage: true });
+  await page.screenshot({ path: info.outputPath("extract-connected.png"), fullPage: true });
   await page.getByRole("button", { name: "Reset", exact: true }).click();
   await expect(page.getByText(/Belum ada gambar/)).toBeVisible();
   const urls = await page.evaluate(() => (window as unknown as { fixtureUrls: { created: string[]; revoked: string[] } }).fixtureUrls);
@@ -213,7 +277,7 @@ test("upload payload persists across workflows and retries and reaches only /api
 test("hidden watermark explanation is public and links to the opt-out risk section", async ({ page }, info) => {
   await page.goto("/about/hidden-watermark");
   await expect(page.getByRole("heading", { level: 1, name: "Tentang watermark tersembunyi" })).toBeVisible();
-  await expect(page.getByLabel("Ringkasan dan status fitur")).toContainText("belum terhubung");
+  await expect(page.getByLabel("Ringkasan dan status fitur")).toContainText("sudah aktif");
   await expect(page.locator(".watermark-article section")).toHaveCount(8);
   await expect(page.locator("#informasi")).toContainText("bukan identitas unik foto");
   await expect(page.locator("#informasi")).toContainText("Jangan masukkan password");

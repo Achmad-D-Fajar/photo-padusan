@@ -148,12 +148,21 @@ npm run build
   while disabled, and omits `watermark_payload` when saving. Explanation/risk
   links open the public `/about/hidden-watermark` page in a new tab so the form
   is not discarded.
-- `/dashboard/extract` authenticates on the server and renders `ExtractForm`
-  without an extractor until web extraction integration is implemented. Its
-  optional client callback is the integration boundary; production shows
-  unavailable until wired. Controlled test responses belong only in
-  `tests/ui/fixture-app`, a local component harness. No encryption or download
-  changes are implemented here. Preserve existing visible preview watermarking.
+- `/dashboard/extract` authenticates on the server and renders `ExtractClient`,
+  which wires `ExtractForm` to `POST /api/photos/extract` through the existing
+  authenticated signed-upload staging flow (`photo-uploads`, supporting up to
+  50 MiB including HEIC without passing large multipart bodies through Vercel
+  Functions). `POST /api/photos/extract` validates auth, ownership, and stored
+  size, runs `extractWatermarkText` from `@/lib/watermark/core`, removes the
+  temporary staged file in `finally` on processing paths (with client-side
+  best-effort cleanup on unsuccessful extract responses and the 24-hour daily
+  cleanup cron as fallback if auth or cleanup fails), never reads or writes
+  database photo rows, never logs extracted payloads, and returns explicit `422`
+  error codes for invalid/unmarked/corrupted/unsupported/non-UTF-8 files. Keep
+  `"/api/photos/extract"` in `next.config.ts` `outputFileTracingIncludes`.
+  Controlled fixture responses belong only in `tests/ui/fixture-app`. No
+  encryption or download changes are implemented here. Preserve existing visible
+  preview watermarking.
 
 ## AI requests
 

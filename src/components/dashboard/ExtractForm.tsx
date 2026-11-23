@@ -6,7 +6,13 @@ import ExtractionResult, { type ExtractedPayload, type ExtractionState } from ".
 
 export type ExtractPayload = (file: File) => Promise<ExtractedPayload>;
 
-// Deliberately has no production extractor. A caller may provide a real adapter later.
+export class ExtractFailureError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ExtractFailureError";
+  }
+}
+
 export default function ExtractForm({ onExtract }: { onExtract?: ExtractPayload }) {
   const input = useRef<HTMLInputElement>(null);
   const generation = useRef(0);
@@ -60,8 +66,14 @@ export default function ExtractForm({ onExtract }: { onExtract?: ExtractPayload 
         throw new Error("Hasil ekstraksi tidak valid. Coba lagi atau pilih gambar lain.");
       }
       setState({ kind: "success", result });
-    } catch {
-      if (request === generation.current && lifetime.current.active && lifetime.current.adapter === onExtract) setState({ kind: "error", message: "Ekstraksi gagal. Coba lagi atau pilih gambar lain." });
+    } catch (error) {
+      if (request === generation.current && lifetime.current.active && lifetime.current.adapter === onExtract) {
+        const message =
+          error instanceof ExtractFailureError && error.message.trim()
+            ? error.message
+            : "Ekstraksi gagal. Coba lagi atau pilih gambar lain.";
+        setState({ kind: "error", message });
+      }
     }
   }
 
@@ -85,7 +97,11 @@ export default function ExtractForm({ onExtract }: { onExtract?: ExtractPayload 
           <input id="extraction-file" ref={input} className="watermark-file" type="file" accept={PHOTO_ACCEPT}
             aria-invalid={!!validationError} aria-describedby="extraction-file-help extraction-file-error"
             onChange={event => { const selected = event.target.files?.[0]; if (selected) selectFile(selected); }} />
-          <p id="extraction-file-help">JPEG, PNG, WebP, GIF, TIFF, AVIF, HEIC/HEIF. File tetap di browser sampai layanan ekstraksi dihubungkan.</p>
+          <p id="extraction-file-help">
+            {onExtract
+              ? "JPEG, PNG, WebP, GIF, TIFF, AVIF, HEIC/HEIF. Gambar diunggah sementara untuk ekstraksi dan dibersihkan setelah proses selesai (atau oleh pembersihan harian otomatis bila pembersihan gagal)."
+              : "JPEG, PNG, WebP, GIF, TIFF, AVIF, HEIC/HEIF. File tetap di browser sampai layanan ekstraksi dihubungkan."}
+          </p>
           <p id="extraction-file-error" role="alert" className="watermark-error">{validationError}</p>
         </div>
         {file ? <>

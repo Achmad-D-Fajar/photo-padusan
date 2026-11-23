@@ -17,7 +17,7 @@ export default function HiddenWatermarkPage() {
     <div className="watermark-article">
       <aside className="watermark-panel" aria-label="Ringkasan dan status fitur">
         <h2>Informasi sumber untuk pratinjau</h2>
-        <p><strong>Status saat ini:</strong> penyisipan watermark tersembunyi pada pratinjau unggahan sudah aktif saat Anda menyimpan foto (kecuali dinonaktifkan). Halaman ekstraksi web di aplikasi utama masih <strong>belum terhubung</strong>.</p>
+        <p><strong>Status saat ini:</strong> penyisipan watermark tersembunyi pada pratinjau unggahan dan ekstraksi web di <Link href="/dashboard/extract">halaman ekstraksi</Link> (untuk akun yang masuk) sudah aktif. Enkripsi dan metadata terstruktur dijadwalkan pada tahap berikutnya.</p>
         <p>Watermark tersembunyi menyertakan teks rujukan ke data gambar pratinjau tanpa menambahkan tulisan yang terlihat. Jika informasi berhasil dibaca kembali, rujukan tersebut dapat membantu menelusuri sumber foto.</p>
         <ul>
           <li>Cakupannya hanya pratinjau JPEG yang dibuat dari unggahan tersebut. File asli tetap dipertahankan utuh.</li>
@@ -53,8 +53,8 @@ export default function HiddenWatermarkPage() {
         <p>Di bagian bawah <Link href="/dashboard/upload">formulir unggah</Link>, lihat nilai bawaan lalu buka “Edit watermark (opsional)” jika ingin mengganti teks atau menonaktifkan pilihannya. Periksa penghitung byte, lalu lanjutkan alur unggah biasa. Pilihan ini juga dapat diubah saat meninjau hasil AI.</p>
         <p>Saat Anda menyimpan foto dengan pilihan aktif, payload disisipkan ke pratinjau JPEG yang dibuat dari unggahan itu. Jika ukuran gambar terlalu kecil atau payload melebihi kapasitas pratinjau, penyimpanan ditolak secara eksplisit tanpa pemotongan otomatis.</p>
         <h3>Membaca kembali informasi</h3>
-        <p>Masuk ke akun, buka <Link href="/dashboard/extract">halaman ekstraksi</Link>, dan pilih gambar. Saat ini Anda dapat meninjau file di halaman tersebut, tetapi tombol ekstraksi web tetap nonaktif karena layanannya belum terhubung.</p>
-        <p>Ketika ekstraksi web tersedia kelak, hasil berhasil berarti ada informasi yang dapat ditampilkan untuk Anda periksa. Hasil “tidak terdeteksi” berarti proses tersebut tidak berhasil membaca informasi; itu tidak membuktikan bahwa gambar tidak pernah memiliki watermark.</p>
+        <p>Masuk ke akun, buka <Link href="/dashboard/extract">halaman ekstraksi</Link>, pilih gambar, lalu jalankan ekstraksi. File diunggah sementara ke penyimpanan privat untuk proses pembacaan dan dibersihkan setelah selesai; jika terjadi gangguan sesi atau pembersihan, file sementara dibersihkan oleh tugas pembersihan harian otomatis.</p>
+        <p>Hasil berhasil berarti ada informasi yang lolos pemeriksaan integritas untuk Anda periksa. Hasil gagal atau tidak terdeteksi berarti proses tidak berhasil membaca informasi yang valid; itu tidak membuktikan bahwa gambar tidak pernah memiliki watermark.</p>
       </section>
       <section id="risiko">
         <h2>Apa akibatnya jika saya menonaktifkan?</h2>
