@@ -2,6 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import EditPhotoForm from "@/components/dashboard/EditPhotoForm";
 import { attachLicenseHistory } from "@/lib/queries/photo-license-history";
+import { LEGAL_DOCUMENTS, hasAuthorizedTermsAcceptance } from "@/lib/legal-documents";
 
 interface EditPhotoPageProps {
   params: Promise<{ id: string }>;
@@ -16,11 +17,13 @@ export default async function EditPhotoPage({ params }: EditPhotoPageProps) {
 
   const { data: photo, error: photoError } = await supabase
     .from("photos")
-    .select("id, user_id, thumbnail_url, caption_en, caption_id, tags_en, tags_id, microstock_url, status, created_at")
+    .select("id, user_id, thumbnail_url, caption_en, caption_id, tags_en, tags_id, microstock_url, status, created_at, watermark_enabled")
     .eq("id", id)
     .single();
 
   if (photoError || !photo || photo.user_id !== user.id) notFound();
+
+  const hasAcceptedCurrentTerms = hasAuthorizedTermsAcceptance(user, LEGAL_DOCUMENTS.terms.version);
 
   return (
     <main className="container mx-auto px-4 py-12 max-w-3xl">
@@ -33,7 +36,10 @@ export default async function EditPhotoPage({ params }: EditPhotoPageProps) {
         </p>
       </div>
 
-      <EditPhotoForm photo={(await attachLicenseHistory(supabase, [photo]))[0]} />
+      <EditPhotoForm
+        photo={(await attachLicenseHistory(supabase, [photo]))[0]}
+        hasAcceptedCurrentTerms={hasAcceptedCurrentTerms}
+      />
     </main>
   );
 }

@@ -3,9 +3,11 @@ const assert = require("node:assert/strict");
 const sharp = require("sharp");
 const { loadTs } = require("./helpers/load-ts.cjs");
 
-const crypto = loadTs("src/lib/server/watermark-crypto.ts");
-const dct = loadTs("src/lib/server/watermark-dct.ts");
-const image = loadTs("src/lib/server/watermark-image.ts");
+const moduleCache = new Map();
+const crypto = loadTs("src/lib/server/watermark-crypto.ts", {}, moduleCache);
+const core = loadTs("src/lib/watermark/core.ts", {}, moduleCache);
+const imageProc = loadTs("src/lib/server/image-processing.ts", {}, moduleCache);
+const watermarkBytes = loadTs("src/lib/server/watermark-bytes.ts", {}, moduleCache);
 
 const PASSPHRASE = "rahasia-padusan-2026";
 // Timestamp tetap agar paket biner deterministik antar-run (isi sertifikat memengaruhi
@@ -27,10 +29,16 @@ function gradientRgb(width, height) {
 let fixturePromise;
 function pipelineFixture() {
   fixturePromise ??= (async () => {
-    const width = 800, height = 600;
-    const src = await sharp(gradientRgb(width, height), { raw: { width, height, channels: 3 } }).jpeg({ quality: 92 }).toBuffer();
-    const embedded = await image.embedCopyrightWatermark(src, CERT_INPUT, PASSPHRASE);
-    return { embedded, width, height };
+    const width = 1600, height = 900;
+    const src = await sharp(gradientRgb(width, height), { raw: { width, height, channels: 3 } }).jpeg({ quality: 94 }).toBuffer();
+    const imageHash = await imageProc.computeNormalizedImageHash(src);
+    const cert = crypto.buildCertificate({ ...CERT_INPUT, licenseMode: "free", imageHash });
+    const { packet } = await crypto.encryptCertificate(cert, PASSPHRASE);
+    const { watermarkedBuffer: previewBuffer } = await imageProc.processImageForStorage(src, {
+      invisibleWatermarkPayload: new Uint8Array(packet),
+    });
+    const { downloadBuffer } = await imageProc.createWatermarkedDownloadCopy(src, new Uint8Array(packet));
+    return { src, previewBuffer, downloadBuffer, imageHash, packet, width, height };
   })();
   return fixturePromise;
 }
@@ -70,75 +78,139 @@ test("parsePacket menolak magic salah dan panjang terpotong", async () => {
   assert.throws(() => crypto.parsePacket(packet.subarray(0, packet.length - 1)), /PAYLOAD_LEN/);
 });
 
-test("DCT round-trip lossless: bit identik dan PSNR > 40 dB", async () => {
-  const width = 1024, height = 1024;
-  const rgb = gradientRgb(width, height);
-  const cert = crypto.buildCertificate({ ...CERT_INPUT, imageHash: "e".repeat(64) });
-  const { packet } = await crypto.encryptCertificate(cert, PASSPHRASE);
-  const wm = dct.embedPacketRgb(rgb, width, height, packet);
-  const extracted = dct.extractPacketRgb(wm, width, height);
-  assert.ok(extracted.equals(packet), "BER harus 0 tanpa serangan");
-  let se = 0;
-  for (let i = 0; i < rgb.length; i++) { const d = rgb[i] - wm[i]; se += d * d; }
-  const psnr = 10 * Math.log10((255 * 255) / (se / rgb.length));
-  assert.ok(psnr > 40, `PSNR ${psnr.toFixed(2)} dB harus > 40 dB`);
+test("mode lisensi tidak menyematkan CC BY-NC-ND 4.0 pada draf/eksternal dan kunci server fail-closed", () => {
+  const extCert = crypto.buildCertificate({ ...CERT_INPUT, licenseMode: "external", imageHash: "a".repeat(64) });
+  const draftCert = crypto.buildCertificate({ ...CERT_INPUT, licenseMode: "draft", imageHash: "a".repeat(64) });
+  assert.ok(!extCert.license_terms.includes("CC BY"));
+  assert.ok(!draftCert.license_terms.includes("CC BY"));
+
+  const prevKey = process.env.WATERMARK_SECRET_KEY;
+  try {
+    delete process.env.WATERMARK_SECRET_KEY;
+    assert.throws(() => crypto.getWatermarkSecretKey(), err => err.code === "KEY_UNAVAILABLE");
+    process.env.WATERMARK_SECRET_KEY = "short";
+    assert.throws(() => crypto.getWatermarkSecretKey(), err => err.code === "KEY_UNAVAILABLE");
+    process.env.WATERMARK_SECRET_KEY = PASSPHRASE;
+    assert.equal(crypto.getWatermarkSecretKey(), PASSPHRASE);
+  } finally {
+    if (prevKey === undefined) delete process.env.WATERMARK_SECRET_KEY;
+    else process.env.WATERMARK_SECRET_KEY = prevKey;
+  }
 });
 
-test("capacity overflow ditolak sebelum citra diubah", () => {
-  const rgb = gradientRgb(16, 16);
-  assert.throws(() => dct.embedPacketRgb(rgb, 16, 16, Buffer.alloc(100)), { name: "CapacityExceededError" });
+test("DCT Profile 1 round-trip dengan paket terenkripsi: bit identik pada preview 16:9 Q80 dan unduhan Q92", async () => {
+  const { previewBuffer, downloadBuffer, packet, imageHash } = await pipelineFixture();
+  for (const buf of [previewBuffer, downloadBuffer]) {
+    const extracted = await core.extractWatermark(buf);
+    assert.ok(Buffer.from(extracted.payload).equals(packet), "Byte terenkripsi harus identik");
+    const { certificate } = await crypto.decryptPacket(Buffer.from(extracted.payload), PASSPHRASE);
+    assert.equal(certificate.photo_id, CERT_INPUT.photoId);
+    assert.equal(certificate.photographer, CERT_INPUT.photographer);
+    assert.equal(certificate.license_terms, "CC BY-NC-ND 4.0");
+    assert.equal(certificate.image_hash, imageHash);
+  }
+  const actualHash = await imageProc.computeNormalizedImageHash(downloadBuffer);
+  assert.equal(imageProc.isNormalizedImageHashMatch(imageHash, actualHash), true);
 });
 
-test("citra tanpa watermark ditolak saat ekstraksi", () => {
-  assert.throws(() => dct.extractPacketRgb(gradientRgb(512, 512), 512, 512), { name: "WatermarkNotFoundError" });
+test("capacity overflow ditolak sebelum citra diubah", async () => {
+  const tinyJpeg = await sharp(gradientRgb(16, 16), { raw: { width: 16, height: 16, channels: 3 } }).jpeg().toBuffer();
+  await assert.rejects(
+    core.embedWatermark(tinyJpeg, new Uint8Array(100)),
+    err => err instanceof core.WatermarkError && (err.code === "IMAGE_TOO_SMALL" || err.code === "CAPACITY_EXCEEDED")
+  );
 });
 
-test("pipeline happy path: sertifikat utuh dan hash foto cocok", async () => {
-  const { embedded } = await pipelineFixture();
-  const result = await image.verifyImageWatermark(embedded.pngBuffer, PASSPHRASE);
-  assert.equal(result.hashMatch, true);
-  assert.equal(result.certificate.photo_id, CERT_INPUT.photoId);
-  assert.equal(result.certificate.photographer, CERT_INPUT.photographer);
-  assert.equal(result.certificate.license_terms, "CC BY-NC-ND 4.0");
-  assert.equal(result.certificate.image_hash, embedded.imageHash);
-});
-
-test("serangan JPEG Q80: watermark tetap terbaca dan sertifikat tetap valid", async () => {
-  const { embedded } = await pipelineFixture();
-  const attacked = await sharp(embedded.pngBuffer).jpeg({ quality: 80 }).toBuffer();
-  const result = await image.verifyImageWatermark(attacked, PASSPHRASE);
-  assert.equal(result.certificate.photographer, CERT_INPUT.photographer);
-  // Hash boleh mismatch setelah kompresi lossy — tag GCM tetap otoritas validitas.
-  assert.equal(typeof result.hashMatch, "boolean");
+test("citra tanpa watermark ditolak saat ekstraksi", async () => {
+  const plainJpeg = await sharp(gradientRgb(512, 512), { raw: { width: 512, height: 512, channels: 3 } }).jpeg().toBuffer();
+  await assert.rejects(
+    core.extractWatermark(plainJpeg),
+    err => err instanceof core.WatermarkError && err.code === "NO_WATERMARK"
+  );
 });
 
 test("copy-paste attack: sertifikat foto A di foto B terdeteksi lewat hash", async () => {
-  const { embedded, width, height } = await pipelineFixture();
-  const packetA = await image.extractWatermarkPacket(embedded.pngBuffer);
-  const rgbB = gradientRgb(width, height).map((v, i) => (v * 3 + i) % 256);
-  const wmB = dct.embedPacketRgb(rgbB, width, height, packetA);
-  const fotoB = await sharp(wmB, { raw: { width, height, channels: 3 } }).png().toBuffer();
-  const result = await image.verifyImageWatermark(fotoB, PASSPHRASE);
-  assert.equal(result.hashMatch, false);
+  const { packet, width, height } = await pipelineFixture();
+  const rgbB = Buffer.alloc(width * height * 3);
+  for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+    const i = (y * width + x) * 3;
+    const checker = ((Math.floor(x / 64) + Math.floor(y / 64)) & 1) ? 210 : 30;
+    rgbB[i] = Math.round(checker * (1 - x / width));
+    rgbB[i + 1] = Math.round(checker * (1 - y / height));
+    rgbB[i + 2] = checker;
+  }
+  const sourceB = await sharp(rgbB, { raw: { width, height, channels: 3 } }).jpeg({ quality: 94 }).toBuffer();
+  const fotoB = await core.embedWatermark(sourceB, new Uint8Array(packet), { jpegQuality: 92 });
+  const extracted = await core.extractWatermark(fotoB);
+  const { certificate } = await crypto.decryptPacket(Buffer.from(extracted.payload), PASSPHRASE);
+  const actualHash = await imageProc.computeNormalizedImageHash(fotoB);
+  assert.equal(imageProc.isNormalizedImageHashMatch(certificate.image_hash, actualHash), false);
 });
 
-test("route /api/photos/verify: happy path 200, passphrase salah 422", async () => {
-  const { embedded } = await pipelineFixture();
-  const route = loadTs("src/app/api/photos/verify/route.ts");
-  function formRequest(fileBuffer, passphrase) {
-    const form = new FormData();
-    form.append("file", new File([fileBuffer], "sengketa.png", { type: "image/png" }));
-    form.append("passphrase", passphrase);
-    return new Request("http://localhost/api/photos/verify", { method: "POST", body: form });
-  }
-  const ok = await route.POST(formRequest(embedded.pngBuffer, PASSPHRASE));
-  assert.equal(ok.status, 200);
-  const okBody = await ok.json();
-  assert.equal(okBody.success, true);
-  assert.equal(okBody.data.certificate.photo_id, CERT_INPUT.photoId);
+test("route /api/photos/extract: happy path 200 dengan WATERMARK_SECRET_KEY, kunci salah 422", async () => {
+  const { downloadBuffer } = await pipelineFixture();
+  const userId = "11111111-1111-4111-8111-111111111111";
+  const stagedPath = `${userId}/44444444-4444-4444-8444-444444444444.jpg`;
+  const supabase = {
+    auth: { getUser: async () => ({ data: { user: { id: userId } }, error: null }) },
+    storage: {
+      from: () => ({
+        info: async () => ({ data: { size: downloadBuffer.byteLength }, error: null }),
+        download: async () => ({ data: new Blob([downloadBuffer]), error: null }),
+        remove: async () => ({ error: null }),
+      }),
+    },
+  };
+  const route = loadTs("src/app/api/photos/extract/route.ts", {
+    "@/lib/supabase/server": { createClient: async () => supabase },
+  }, moduleCache);
+  const req = () => new Request("http://localhost/api/photos/extract", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ path: stagedPath }),
+  });
 
-  const bad = await route.POST(formRequest(embedded.pngBuffer, "passphrase-palsu"));
-  assert.equal(bad.status, 422);
-  const badBody = await bad.json();
-  assert.match(badBody.error, /Authentication Error \(Invalid Tag\)/);
+  const prevKey = process.env.WATERMARK_SECRET_KEY;
+  try {
+    process.env.WATERMARK_SECRET_KEY = PASSPHRASE;
+    const ok = await route.POST(req());
+    assert.equal(ok.status, 200);
+    const okBody = await ok.json();
+    assert.equal(okBody.success, true);
+    assert.equal(okBody.data.authenticated, true);
+    assert.equal(okBody.data.hashMatch, true);
+    assert.equal(okBody.data.certificate.photo_id, CERT_INPUT.photoId);
+
+    process.env.WATERMARK_SECRET_KEY = "passphrase-palsu";
+    const bad = await route.POST(req());
+    assert.equal(bad.status, 422);
+    const badBody = await bad.json();
+    assert.equal(badBody.code, "AUTH_FAILED");
+    assert.match(badBody.error, /Authentication Error \(Invalid Tag\)/);
+  } finally {
+    if (prevKey === undefined) delete process.env.WATERMARK_SECRET_KEY;
+    else process.env.WATERMARK_SECRET_KEY = prevKey;
+  }
+});
+
+test("prepareWatermarkPayloadBytes mengenkripsi sertifikat sekali dengan kunci server", async () => {
+  const prevKey = process.env.WATERMARK_SECRET_KEY;
+  process.env.WATERMARK_SECRET_KEY = PASSPHRASE;
+  try {
+    const prepared = await watermarkBytes.prepareWatermarkPayloadBytes({
+      photoId: CERT_INPUT.photoId,
+      userId: "user-1",
+      photographer: CERT_INPUT.photographer,
+      licenseMode: "free",
+      imageHash: "f".repeat(64),
+      customPayload: "Desa Padusan 🌿",
+    });
+    assert.equal(prepared.version, "iwm-v1-aes256gcm");
+    assert.equal(crypto.isEncryptedWatermarkPacket(prepared.payloadBytes), true);
+    const { certificate } = await crypto.decryptPacket(Buffer.from(prepared.payloadBytes), PASSPHRASE);
+    assert.equal(certificate.reference_payload, "Desa Padusan 🌿");
+  } finally {
+    if (prevKey === undefined) delete process.env.WATERMARK_SECRET_KEY;
+    else process.env.WATERMARK_SECRET_KEY = prevKey;
+  }
 });

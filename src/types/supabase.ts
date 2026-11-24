@@ -55,6 +55,9 @@ export type Database = {
           id: string;
           user_id: string | null;
           image_url: string | null;
+          download_url: string | null;
+          watermark_enabled: boolean | null;
+          download_watermark_version: string | null;
           thumbnail_url: string | null;
           caption_en: string | null;
           caption_id: string | null;
@@ -70,6 +73,9 @@ export type Database = {
           id?: string;
           user_id: string;
           image_url?: string | null;
+          download_url?: string | null;
+          watermark_enabled?: boolean | null;
+          download_watermark_version?: string | null;
           thumbnail_url?: string | null;
           caption_en?: string | null;
           caption_id?: string | null;
@@ -83,6 +89,9 @@ export type Database = {
           id?: string;
           user_id?: string;
           image_url?: string | null;
+          download_url?: string | null;
+          watermark_enabled?: boolean | null;
+          download_watermark_version?: string | null;
           thumbnail_url?: string | null;
           caption_en?: string | null;
           caption_id?: string | null;

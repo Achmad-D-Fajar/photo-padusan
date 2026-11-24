@@ -14,6 +14,8 @@ const nextConfig: NextConfig = {
     "/api/photos/preview": sharpRuntimeFiles,
     "/api/photos/analyze": sharpRuntimeFiles,
     "/api/photos/draft": sharpRuntimeFiles,
+    "/api/photos/extract": sharpRuntimeFiles,
+    "/api/photos/[id]": sharpRuntimeFiles,
   },
 };
 

@@ -109,7 +109,7 @@ test("new JPEG preview metadata has attribution and its complete canonical refer
   assert.equal((await sharp(output).metadata()).format, "jpeg");
 });
 
-for (const scenario of ["draft", "archived", "external-with-history", "link-added-before-signing", "unpublished-before-signing", "free-jpeg"]) {
+for (const scenario of ["draft", "archived", "external-with-history", "link-added-before-signing", "unpublished-before-signing", "missing-download-copy", "free-jpeg"]) {
   test(`download server independently enforces ${scenario}`, async () => {
     const owner = "11111111-1111-4111-8111-111111111111";
     let signed = null;
@@ -121,8 +121,8 @@ for (const scenario of ["draft", "archived", "external-with-history", "link-adde
       "@/lib/supabase/admin": { createAdminClient: () => {
         assert.ok(published && scenario !== "external-with-history");
         return {
-          from: () => ({ select(columns) { sourceColumns = columns; return this; }, eq() { return this; }, single: async () => ({ data: scenario === "unpublished-before-signing" ? null : { image_url: `https://example.test/storage/v1/object/public/originals/${owner}/image.jpeg`, microstock_url: scenario === "link-added-before-signing" ? "https://provider.test/new" : null } }) }),
-          storage: { from: bucket => ({ createSignedUrl: async (path, seconds, options) => { signed = { bucket, path, seconds, options }; return { data: { signedUrl: "https://example.test/signed-original" }, error: null }; } }) },
+          from: () => ({ select(columns) { sourceColumns = columns; return this; }, eq() { return this; }, single: async () => ({ data: scenario === "unpublished-before-signing" ? null : { download_url: scenario === "missing-download-copy" ? null : `https://example.test/storage/v1/object/public/photo-downloads/${owner}/download_image.jpg`, microstock_url: scenario === "link-added-before-signing" ? "https://provider.test/new" : null } }) }),
+          storage: { from: bucket => ({ createSignedUrl: async (path, seconds, options) => { signed = { bucket, path, seconds, options }; return { data: { signedUrl: "https://example.test/signed-download" }, error: null }; } }) },
         };
       } },
     });
@@ -132,11 +132,13 @@ for (const scenario of ["draft", "archived", "external-with-history", "link-adde
     if (expected !== 307) assert.equal(signed, null);
     else {
       assert.match(sourceColumns, /microstock_url/);
-      assert.equal(response.headers.get("location"), "https://example.test/signed-original");
+      assert.match(sourceColumns, /download_url/);
+      assert.ok(!sourceColumns.includes("image_url"));
+      assert.equal(response.headers.get("location"), "https://example.test/signed-download");
       assert.equal(response.headers.get("cache-control"), "no-store");
-      assert.equal(signed.bucket, "originals");
-      assert.ok(signed.path.endsWith(".jpeg"));
-      assert.equal(signed.options.download, "sawah-padustock.jpeg");
+      assert.equal(signed.bucket, "photo-downloads");
+      assert.ok(signed.path.endsWith(".jpg"));
+      assert.equal(signed.options.download, "sawah-padustock.jpg");
       assert.equal(signed.seconds, 60);
     }
   });

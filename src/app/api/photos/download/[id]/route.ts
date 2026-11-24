@@ -2,9 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { extractStoragePath } from "@/lib/storage";
+import { PHOTO_DOWNLOAD_BUCKET } from "@/lib/photo-upload";
 import { ApiError, apiErrorResponse } from "@/lib/server/api-error";
 import { externalLicenseLink } from "@/lib/photo-licensing";
-import { demoDownloadFilename } from "@/lib/demo-download";
 
 export const runtime = "nodejs";
 
@@ -21,21 +21,24 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
     if (error || !photo) throw new ApiError(404, "Foto tidak ditemukan.");
     if (externalLicenseLink(photo.microstock_url)) throw new ApiError(403, "Foto ini tersedia melalui tautan eksternal.");
     const admin = createAdminClient();
-    const { data: source } = await admin.from("photos").select("image_url, thumbnail_url, microstock_url")
+    // Serve only the separate watermarked full-resolution download copy;
+    // private source originals (`image_url` / `originals`) are never served publicly.
+    const { data: source } = await admin.from("photos").select("download_url, microstock_url")
       .eq("id", id).eq("user_id", photo.user_id!).eq("status", "published").single();
-    if (source && externalLicenseLink(source.microstock_url)) throw new ApiError(403, "Foto ini tersedia melalui tautan eksternal.");
-    const bucket = source?.image_url ? "originals" : "thumbnails";
-    const url = source?.image_url || source?.thumbnail_url;
-    const path = url ? extractStoragePath(url, bucket) : null;
-    if (!path || !path.startsWith(`${photo.user_id}/`) || path.includes("..")) throw new ApiError(404, "File gambar tidak tersedia.");
+    if (!source) throw new ApiError(404, "Foto tidak ditemukan.");
+    if (externalLicenseLink(source.microstock_url)) throw new ApiError(403, "Foto ini tersedia melalui tautan eksternal.");
+    const path = source.download_url ? extractStoragePath(source.download_url, PHOTO_DOWNLOAD_BUCKET) : null;
+    if (!path || !path.startsWith(`${photo.user_id}/`) || path.includes("..")) {
+      throw new ApiError(404, "Salinan unduhan tidak tersedia.");
+    }
     const extension = path.split(".").pop()?.toLowerCase() ?? "jpg";
     const caption = (photo.caption_id || photo.caption_en || "foto-padustock").toLowerCase()
       .normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 60);
-    // Storage serves the file directly, including 50 MB originals and HEIC,
-    // without buffering it through a Vercel function's response body.
-    const { data, error: signingError } = await admin.storage.from(bucket).createSignedUrl(path, 60, {
-      download: demoDownloadFilename(caption, extension, id, photo.user_id!),
-    });
+    // Storage serves the file directly via short-lived signed URL without
+    // buffering large full-resolution copies through a Vercel function response body.
+    const { data, error: signingError } = await admin.storage
+      .from(PHOTO_DOWNLOAD_BUCKET)
+      .createSignedUrl(path, 60, { download: `${caption}-padustock.${extension}` });
     if (signingError || !data) throw new ApiError(502, "Gagal menyiapkan unduhan.");
     const response = NextResponse.redirect(data.signedUrl);
     response.headers.set("Cache-Control", "no-store");

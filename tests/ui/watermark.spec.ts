@@ -23,11 +23,115 @@ async function trackUrls(page: Page) {
   });
 }
 
+test("extraction is authenticated, stages through signed uploads, displays results/errors, and cleans local previews", async ({ page }, info) => {
+  await page.goto("/dashboard/extract");
+  await expect(page).toHaveURL(/\/login$/);
+  await login(page);
+  await trackUrls(page);
+
+  let extractAttempt = 0;
+  const extractRequests: Record<string, unknown>[] = [];
+  const cleanupPaths: string[] = [];
+  await page.route("**/api/photos/upload", async route => {
+    const method = route.request().method();
+    if (method === "DELETE") {
+      const body = route.request().postDataJSON();
+      if (body?.path) cleanupPaths.push(String(body.path));
+      return route.fulfill({ json: { success: true } });
+    }
+    return route.fulfill({
+      json: {
+        success: true,
+        data: {
+          path: "11111111-1111-4111-8111-111111111111/extract-test.png",
+          token: "fixture-token",
+          contentType: "image/png",
+        },
+      },
+    });
+  });
+  await page.route("**/storage/v1/object/upload/sign/**", route =>
+    route.fulfill({ json: { Key: "fixture", Id: "fixture" } })
+  );
+  await page.route("**/api/photos/extract", async route => {
+    extractAttempt++;
+    const body = route.request().postDataJSON();
+    if (body) extractRequests.push(body);
+    if (extractAttempt === 1) {
+      return route.fulfill({
+        status: 200,
+        json: {
+          success: true,
+          data: {
+            payload,
+            byteLength: Buffer.byteLength(payload, "utf8"),
+            version: 1,
+            profile: 1,
+          },
+        },
+      });
+    }
+    return route.fulfill({
+      status: 422,
+      json: {
+        success: false,
+        code: "NO_WATERMARK",
+        error: "Watermark tersembunyi yang didukung tidak terdeteksi.",
+      },
+    });
+  });
+
+  await page.goto("/dashboard/extract");
+  await expect(page.getByRole("heading", { name: "Ekstraksi watermark" })).toBeVisible();
+  if ((page.viewportSize()?.width ?? 0) < 1024) await page.getByRole("button", { name: "Buka menu navigasi" }).click();
+  await expect(page.getByRole("link", { name: "Ekstraksi", exact: true })).toBeVisible();
+  if ((page.viewportSize()?.width ?? 0) < 1024) await page.getByRole("button", { name: "Buka menu navigasi" }).evaluate(button => button.blur());
+  await expect(page.getByRole("button", { name: "Ekstrak payload" })).toBeDisabled();
+  await expect(page.getByText(/Belum ada hasil/)).toBeVisible();
+
+  await page.getByLabel(/Pilih gambar/).setInputFiles(image);
+  const preview = page.getByRole("img", { name: "Pratinjau penuh padusan.png" });
+  await expect(preview).toBeVisible();
+  expect(await preview.evaluate(node => getComputedStyle(node).objectFit)).toBe("contain");
+  await expect(page.getByText("padusan.png", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Ekstrak payload" })).toBeEnabled();
+
+  // First run: verified payload extraction
+  await page.getByRole("button", { name: "Ekstrak payload" }).click();
+  const output = page.getByLabel("Teks payload hasil ekstraksi");
+  await expect(output).toHaveText(payload);
+  await expect(page.getByText(`${Buffer.byteLength(payload)} byte UTF-8`, { exact: false })).toBeVisible();
+  expect(extractRequests).toEqual([{ path: "11111111-1111-4111-8111-111111111111/extract-test.png" }]);
+
+  // Second run: explicit NO_WATERMARK error from /api/photos/extract
+  await page.getByLabel(/Pilih gambar/).setInputFiles({ name: "kamera.heic", mimeType: "", buffer: Buffer.from("local undecodable HEIC fixture") });
+  await expect(page.getByText(/Pratinjau tidak tersedia di browser ini/)).toBeVisible();
+  await expect(page.getByText("kamera.heic", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Ekstrak payload" }).click();
+  await expect(page.getByRole("alert").filter({ hasText: "Watermark tersembunyi yang didukung tidak terdeteksi." })).toBeVisible();
+  expect(cleanupPaths).toEqual(["11111111-1111-4111-8111-111111111111/extract-test.png"]);
+
+  const originalViewport = page.viewportSize()!;
+  for (const width of [320, 375, 414, 768]) {
+    await page.setViewportSize({ width, height: 900 });
+    await noOverflow(page);
+    await page.screenshot({ path: info.outputPath(`extract-${width}.png`), fullPage: true });
+  }
+  await page.setViewportSize(originalViewport);
+  await page.screenshot({ path: info.outputPath("extract-connected.png"), fullPage: true });
+  await page.getByRole("button", { name: "Reset", exact: true }).click();
+  await expect(page.getByText(/Belum ada gambar/)).toBeVisible();
+  const urls = await page.evaluate(() => (window as unknown as { fixtureUrls: { created: string[]; revoked: string[] } }).fixtureUrls);
+  expect(urls.created.length).toBe(2);
+  expect(urls.revoked).toEqual(urls.created);
+  await page.getByLabel(/Pilih gambar/).setInputFiles({ name: "bad.txt", mimeType: "text/plain", buffer: Buffer.from("test") });
+  await expect(page.locator("#extraction-file-error")).toContainText("Format gambar tidak didukung");
+});
+
 test("extraction fixture exercises success, errors, stale work, and clipboard failure", async ({ page }, info) => {
   await trackUrls(page);
   await page.goto("http://127.0.0.1:3101");
   await expect(page.getByText(/Belum ada hasil/)).toBeVisible();
-  await expect(page.getByLabel(/Pilih gambar/)).toBeEnabled();
   await page.getByLabel(/Pilih gambar/).setInputFiles(image);
   await page.getByRole("button", { name: "Ekstrak payload" }).click();
   const output = page.getByLabel("Teks payload hasil ekstraksi");
@@ -47,7 +151,7 @@ test("extraction fixture exercises success, errors, stale work, and clipboard fa
   await expect(page.getByRole("alert").filter({ hasText: "Ekstraksi gagal" })).toBeVisible();
   await page.getByLabel("Mode fixture").selectOption("invalid");
   await page.getByRole("button", { name: "Ekstrak payload" }).click();
-  await expect(page.getByRole("alert").filter({ hasText: "Hasil ekstraksi tidak valid" })).toBeVisible();
+  await expect(page.getByRole("alert").filter({ hasText: "Ekstraksi gagal" })).toBeVisible();
   await page.getByLabel("Mode fixture").selectOption("delayed");
   await page.getByRole("button", { name: "Ekstrak payload" }).click();
   await expect(page.getByText(/Memproses gambar/)).toBeVisible();
@@ -69,14 +173,18 @@ test("extraction fixture exercises success, errors, stale work, and clipboard fa
   await noOverflow(page);
 });
 
-test("upload payload and passphrase reach the draft route only while watermark is enabled", async ({ page }, info) => {
+test("upload payload persists across workflows and retries and reaches only /api/photos/draft", async ({ page }, info) => {
   await login(page);
-  const bodies: { url: string; body: Record<string, unknown> }[] = [];
+  const nonDraftBodies: Record<string, unknown>[] = [];
+  const draftBodies: Record<string, unknown>[] = [];
   let attempts = 0;
   await page.route("**/api/photos/**", async route => {
     const request = route.request();
     const body = request.postDataJSON();
-    if (body) bodies.push({ url: request.url(), body });
+    if (body) {
+      if (request.url().endsWith("/draft")) draftBodies.push(body);
+      else nonDraftBodies.push(body);
+    }
     if (request.url().endsWith("/upload")) return route.fulfill({ json: request.method() === "DELETE" ? { success: true } : { success: true, data: { path: "11111111-1111-4111-8111-111111111111/test.png", token: "fixture", contentType: "image/png" } } });
     if (request.url().endsWith("/preview")) return route.fulfill({ contentType: "image/jpeg", body: png });
     if (request.url().endsWith("/translate")) return route.fulfill({ json: { success: true, data: { caption_en: "Field", tags_en: ["field"] } } });
@@ -115,7 +223,6 @@ test("upload payload and passphrase reach the draft route only while watermark i
   await expect(field).toHaveAttribute("aria-invalid", "true");
   await expect(field).toHaveValue("🌿".repeat(129));
   await field.fill(payload);
-  await page.getByLabel(/Passphrase Hak Cipta/).fill("fixture-passphrase-2026");
   await page.getByLabel(/Pilih gambar/).setInputFiles(image);
   await expect(page.getByRole("img", { name: "Pratinjau", exact: true })).toBeVisible();
   await page.getByLabel("Caption Manual", { exact: true }).fill("Sawah");
@@ -156,32 +263,29 @@ test("upload payload and passphrase reach the draft route only while watermark i
   await expect(page).toHaveURL(/\/dashboard$/);
   await expect(page.getByRole("link", { name: "Ekstraksi watermark", exact: true })).toBeVisible();
   expect(attempts).toBe(3);
-  const drafts = bodies.filter(entry => entry.url.endsWith("/draft"));
-  expect(drafts.length).toBe(3);
-  for (const { body } of drafts) {
-    expect(String(body.watermark_payload)).toContain("Padusan 🌿");
-    expect(body.watermark_passphrase).toBe("fixture-passphrase-2026");
-  }
-  for (const { url, body } of bodies) {
-    if (url.endsWith("/draft")) continue;
+  for (const body of nonDraftBodies) {
     expect(JSON.stringify(body)).not.toContain("Padusan 🌿");
-    expect(JSON.stringify(body)).not.toContain("fixture-passphrase-2026");
     expect(Object.keys(body).some(key => /payload|watermark/i.test(key))).toBeFalsy();
   }
+  expect(draftBodies.map(b => ({ enabled: b.watermark_enabled, payload: b.watermark_payload }))).toEqual([
+    { enabled: true, payload },
+    { enabled: true, payload: `${payload}\nAI review` },
+    { enabled: true, payload: `${payload}\nAI review` },
+  ]);
 });
 
 test("hidden watermark explanation is public and links to the opt-out risk section", async ({ page }, info) => {
   await page.goto("/about/hidden-watermark");
   await expect(page.getByRole("heading", { level: 1, name: "Tentang watermark tersembunyi" })).toBeVisible();
-  await expect(page.getByLabel("Ringkasan dan status fitur")).toContainText("Fitur aktif");
+  await expect(page.getByLabel("Ringkasan dan status fitur")).toContainText("sudah aktif");
   await expect(page.locator(".watermark-article section")).toHaveCount(8);
   await expect(page.locator("#informasi")).toContainText("bukan identitas unik foto");
-  await expect(page.locator("#informasi")).toContainText("Jangan gunakan passphrase");
+  await expect(page.locator("#informasi")).toContainText("Jangan masukkan password");
   await page.getByRole("link", { name: "Baca akibat menonaktifkan" }).click();
   await expect(page).toHaveURL(/\/about\/hidden-watermark#risiko$/);
   await expect(page.locator("#risiko")).toContainText("tidak menghilangkan hak fotografer");
   await expect(page.locator("#risiko")).toContainText("salinan yang sudah beredar");
-  await expect(page.locator("#batasan")).toContainText("bukti kriptografis");
+  await expect(page.locator("#batasan")).toContainText("bukan bukti kepemilikan yang menentukan");
   for (const href of ["/dashboard/upload", "/dashboard/extract", "/privacy", "/terms#riwayat-cc"]) {
     await expect(page.locator(`main a[href="${href}"]`).first()).toHaveAttribute("href", href);
   }

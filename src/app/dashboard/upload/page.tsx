@@ -1,12 +1,15 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import UploadForm from "@/components/dashboard/UploadForm";
+import { LEGAL_DOCUMENTS, hasAuthorizedTermsAcceptance } from "@/lib/legal-documents";
 
 export default async function UploadPage() {
   const supabase = await createClient();
   const { data: { user }, error: userError } = await supabase.auth.getUser();
 
   if (userError || !user) redirect("/login");
+
+  const hasAcceptedCurrentTerms = hasAuthorizedTermsAcceptance(user, LEGAL_DOCUMENTS.terms.version);
 
   return (
     <main className="container mx-auto px-4 py-12 max-w-2xl">
@@ -19,7 +22,7 @@ export default async function UploadPage() {
         </p>
       </div>
 
-      <UploadForm />
+      <UploadForm hasAcceptedCurrentTerms={hasAcceptedCurrentTerms} />
     </main>
   );
 }

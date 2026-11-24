@@ -12,7 +12,7 @@ export default function ExtractionFixture() {
   const pending = useRef<Array<() => void>>([]);
   const extract = useCallback(async (): Promise<ExtractedPayload> => {
     if (mode === "delayed") await new Promise<void>(resolve => pending.current.push(resolve));
-    if (mode === "error") throw new Error("Ekstraksi gagal: fixture failure");
+    if (mode === "error") throw new Error("Fixture failure");
     return { payload, byteLength: mode === "invalid" ? 999 : new TextEncoder().encode(payload).byteLength };
   }, [mode]);
   return <>

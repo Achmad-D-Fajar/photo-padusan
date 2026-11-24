@@ -21,40 +21,15 @@ are bundled with their licenses in `src/assets/fonts` and loaded through
 - **Photo detail pages** – Every photo has its own page (`/photo/[id]`).
 - **Photographer profiles** – View all works by a photographer (`/photographer/[username]`).
 - **Upload dashboard** – Registered users upload their work at `/dashboard/upload`.
-- **Copyright watermark (encrypted, invisible)** – On upload, an owner passphrase (8–128 chars, required while the watermark toggle is on) derives an AES-256-GCM key via PBKDF2-HMAC-SHA256 (100k iterations). A copyright certificate (photo ID, photographer, license, timestamp, normalized image hash, optional ≤512-byte text payload) is encrypted and embedded into mid-frequency DCT coefficients of the original, archived as lossless PNG. The passphrase is never stored. Opting out keeps the legacy raw-file path.
-- **Hidden watermark explanation** – Public `/about/hidden-watermark` explains the real feature: how embedding works, payload choices, opt-out risks, and measured limitations. Upload links open it in a new tab to preserve form state; the risk link points directly to `#risiko`.
-- **Real extraction & public verification** – Authenticated `/dashboard/extract` and public `/verify` extract the DCT packet and decrypt the certificate server-side; wrong passphrases or tampered images are rejected by the GCM authentication tag. `RealExtractForm` injects the `/api/photos/verify` adapter into the reusable `ExtractForm`. Downloads captioned `padustock demo` still receive photo/uploader reference IDs in their filenames (kept from the demo branch).
+- **Invisible watermark embedding (preview + free-download copy)** – Immediately above the upload/review actions, a compact “Edit watermark (opsional)” disclosure offers a 512-byte UTF-8 payload and an opt-out button. Blank input resolves to `PADUSTOCK-IWM-v1`; other text is preserved exactly. On save (`POST /api/photos/draft`), the resolved payload is embedded and verified in the generated JPEG preview (after the visible watermark, JPEG Q80 progressive/mozjpeg 4:2:0) and—for published free photos—also in a separate full-resolution JPEG download copy (JPEG Q92 progressive/mozjpeg 4:2:0, full oriented dimensions, no visible watermark) stored in the private `photo-downloads` bucket. Uploaded source files stay unchanged in private `originals` storage and are not served via public download paths. External paid listings receive only the watermarked Padustock preview. Opting out skips invisible watermarking while retaining typed text in the form; oversized payloads or too-small images are rejected explicitly with atomic cleanup.
+- **Standalone CLI extractor** – `npm run extract:watermark -- <image-path>` (`scripts/extract-watermark.mjs`) extracts and verifies watermark bytes/UTF-8 text from saved images using the exact same shared core (`src/lib/watermark/core.ts`), with `--raw`, `--hex`, `--json`, and `--decrypt` (AES-256-GCM certificate decryption via `WATERMARK_SECRET_KEY`) modes.
+- **Hidden watermark explanation** – Public `/about/hidden-watermark` explains preview + free-download watermarking, private untouched sources, opt-out consequences, and limitations. Upload links open it in a new tab to preserve form state; the risk acknowledgment links directly to `#risiko`. No unique photo identifier or source URL is automatically embedded in the shared default payload.
+- **Web extraction** – Authenticated `/dashboard/extract` (with `/verify` redirecting to `/dashboard/extract`) offers local file selection, a full-image preview (with a fallback for browser-unsupported formats), and authenticated AES-256-GCM certificate recovery backed by `POST /api/photos/extract` using the shared core (`src/lib/watermark/core.ts`) and crypto module (`src/lib/server/watermark-crypto.ts`). Selected files stage through the existing private `photo-uploads` signed-upload flow and are cleaned up after extraction (with best-effort client cleanup on failed responses and the daily 24-hour cleanup cron as fallback if auth or storage cleanup fails); explicit errors are shown for unmarked, corrupted, unsupported, unauthenticated, or tampered files. Uses the server-managed `WATERMARK_SECRET_KEY` (no passphrase form field).
 - **AI-assisted captions** – Google Gemini helps generate photo descriptions, with the option to write captions and tags manually.
 - **Image & EXIF handling** – Server-side processing with `sharp` and `piexifjs`.
-- **50 MB photo uploads, including HEIC/HEIF** – Files upload directly to Supabase; HEIC is decoded on the server and shown as a JPEG preview. Original downloads preserve the uploaded format.
+- **50 MB photo uploads, including HEIC/HEIF** – Files upload directly to Supabase; HEIC is decoded on the server for previews and full-resolution free-download JPEG copies while the original source file remains untouched in private `originals` storage.
 - **Authentication** – Register / log in with Supabase Auth; `/dashboard/*` is protected by middleware.
 - **Automatic licensing** – Published photos without purchase links use [CC BY-NC-ND 4.0](https://creativecommons.org/licenses/by-nc-nd/4.0/). External listings direct visitors to the provider's applicable licensing process; a preview does not itself grant general reuse permission. Valid prior CC grants continue after link/status changes.
-
-## Copyright watermark (real engine)
-
-This branch merges the `capstoneDemo` UI with the real cryptography + DCT engine
-(`feature/watermark-copyright-protection`). The filename-driven simulation now
-lives only on the `capstoneDemo` branch; `src/lib/demo-extraction.ts` is kept as
-legacy reference and is not imported by the app here.
-
-Run `npm run dev`, sign in, and open `/dashboard/upload`:
-
-1. Pick a photo, write captions (manual or AI), optionally edit the ≤512-byte
-   text payload under “Edit watermark (opsional)”.
-2. Enter the owner passphrase (8–128 chars). It is sent only to the draft route,
-   never stored or logged.
-3. On save, the server builds the certificate, encrypts it (AES-256-GCM, AAD =
-   protocol string), embeds the packet into DCT coefficients (α = 25, luminance
-   mid-frequency pair), and archives the original as lossless PNG.
-4. Prove ownership at public `/verify` (no login) or `/dashboard/extract`:
-   upload the disputed image + passphrase. Correct key → certificate + hash
-   status; wrong key or tampering → “Authentication Error (Invalid Tag)”;
-   no packet → “not detected”. JPEG Q70–90 recompression still recovers the
-   certificate (BER 0% measured); hash mismatch is shown as a warning.
-
-Opting out (“Nonaktifkan watermark”) skips embedding entirely and keeps the
-legacy raw-file move. Measured demo numbers: PSNR 46.12 dB, 667-byte packet.
-Regenerate UI test fixtures with `node tests/ui/make-watermark-fixture.cjs`.
 
 ## 🧰 Tech Stack
 
@@ -81,8 +56,8 @@ Regenerate UI test fixtures with `node tests/ui/make-watermark-fixture.cjs`.
 | `/terms`, `/privacy` | Terms & Conditions, Privacy Policy | Public |
 | `/login`, `/register` | Authentication | Logged-out only |
 | `/dashboard/*` | Dashboard, including `/dashboard/upload` | Logged-in only |
-| `/dashboard/extract` | Real DCT extraction + AES-256-GCM decryption with the owner's passphrase | Logged-in only |
-| `/verify` | Public copyright verification: disputed photo + passphrase → certificate & hash status | Public |
+| `/dashboard/extract` | Authenticated invisible-watermark extraction using the shared core | Logged-in only |
+| `/verify` | Redirects to `/dashboard/extract` (keeps extraction authenticated) | Redirects to `/dashboard/extract` |
 
 Access rules are enforced in `middleware.ts`, which also refreshes Supabase sessions. Unauthenticated users are redirected to `/login`, and logged-in users are redirected from `/login` and `/register` to `/dashboard`.
 
@@ -142,6 +117,9 @@ NEXT_PUBLIC_SITE_URL=https://padustock.vercel.app
 
 # Vercel sends this bearer token to the daily staging cleanup job
 CRON_SECRET=your-long-random-secret
+
+# Server-only secret (8-128 chars) for AES-256-GCM invisible watermark certificates
+WATERMARK_SECRET_KEY=your-long-random-watermark-secret
 ```
 
 > ⚠️ Never commit `.env.local`. It is already covered by `.gitignore`.
@@ -150,14 +128,29 @@ CRON_SECRET=your-long-random-secret
 
 ### 4. Run the development server
 
-Before running the updated upload flow, apply
-[`supabase/migrations/202610240001_photo_uploads.sql`](supabase/migrations/202610240001_photo_uploads.sql)
-in the Supabase SQL editor (or with your normal migration runner). It creates a
-private `photo-uploads` staging bucket, raises the `originals` bucket limit to
-50 MiB, adds owner storage policies, and installs an atomic limit of 20 AI
-requests per user per hour shared by translation and analysis. The project's
-global Storage file size limit must also allow at least 50 MiB. Existing
-`originals` and `thumbnails` buckets and photo/profile policies are still required.
+Before running the updated upload and download flows, follow this rollout order:
+
+1. Apply [`supabase/migrations/202610240001_photo_uploads.sql`](supabase/migrations/202610240001_photo_uploads.sql)
+   and [`supabase/migrations/202611240001_watermarked_downloads.sql`](supabase/migrations/202611240001_watermarked_downloads.sql)
+   in the Supabase SQL editor (or with your normal migration runner). They create a
+   private `photo-uploads` staging bucket, ensure `originals` stays private (50 MiB),
+   create a private `photo-downloads` bucket for full-resolution watermarked JPEG
+   free-download copies, add `photos.download_url`, nullable `photos.watermark_enabled`
+   (`NULL` = unknown legacy preference), and `photos.download_watermark_version`,
+   add owner storage policies, and install an atomic limit of 20 AI requests per
+   user per hour shared by translation and analysis. The project's global Storage
+   file size limit must also allow at least 50 MiB. Existing `originals` and
+   `thumbnails` buckets and photo/profile policies are still required.
+2. Before deploying the download-route cutover on an existing project, run
+   `node scripts/backfill-photo-downloads.mjs --dry-run` against the authorized
+   project to audit existing published free photos (it reports eligible photos as
+   well as photos skipped due to unknown `watermark_enabled` or unaccepted terms),
+   then run `--apply` only once eligible photos have clear authorization. The
+   backfill is idempotent, supports `--regenerate-version iwm-v1-placeholder` for
+   future encrypted-payload upgrades, and never modifies `originals` or
+   `photo_license_history`.
+3. Deploy the updated application (which serves free downloads solely from
+   `photo-downloads` and routes draft/publish edits through `PATCH /api/photos/[id]`).
 
 The browser sends image bytes directly to Storage because Vercel Functions
 limit request bodies to 4.5 MB. Processing routes accept JSON references to the
@@ -168,7 +161,7 @@ The npm override in `package.json` keeps Next.js and the app on the same Sharp
 version. Preserve it during dependency updates and check `npm ls sharp` to avoid
 shipping conflicting native image binaries in Vercel functions.
 `next.config.ts` explicitly includes Sharp's native runtime packages in the
-preview, analysis, and draft functions. If a deployment reports a missing
+preview, analysis, draft, extract, and photo-edit (`[id]`) functions. If a deployment reports a missing
 `libvips-cpp.so` library, install optional dependencies (`npm ci --include=optional`)
 and redeploy with the existing Build Cache disabled.
 
@@ -204,7 +197,7 @@ Browser tests also start a separate Next app from `tests/ui/fixture-app` on
 controlled success and failure responses. This component harness is outside the
 production route tree. The main app and Supabase fixtures use ports 3100 and 54321.
 New frontend checks include UTF-8 payload limits, manual/AI retries with unchanged
-API bodies, extraction result states, clipboard errors, stale results, and blob URL
+API bodies, unavailable extraction, clipboard errors, stale results, and blob URL
 cleanup. Responsive extraction checks also cover 320, 375, 414, and 768 px widths.
 Licensing migration tests also execute SQL triggers, roles, and RLS in an isolated
 PGlite PostgreSQL engine. Its minimal public-view fixture is explicitly test-only,

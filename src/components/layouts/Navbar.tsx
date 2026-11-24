@@ -64,7 +64,6 @@ export default async function Navbar() {
           <ul tabIndex={0} className="menu menu-lg dropdown-content bg-white rounded-none z-20 mt-4 w-64 p-4 border-4 border-[#111111] shadow-[8px_8px_0px_#111111] gap-2">
             <li><Link href="/" className={navLinkClass}>Photos</Link></li>
             <li><Link href="/about" className={navLinkClass}>About</Link></li>
-            <li><Link href="/verify" className={navLinkClass}>Verifikasi</Link></li>
             {user ? (
               <>
                 <li><Link href="/dashboard/upload" className={navLinkClass}>Upload</Link></li>
@@ -93,7 +92,6 @@ export default async function Navbar() {
         <ul className="menu menu-horizontal px-1 gap-2">
           <li><Link href="/" className={navLinkClass}>Photos</Link></li>
           <li><Link href="/about" className={navLinkClass}>About</Link></li>
-          <li><Link href="/verify" className={navLinkClass}>Verifikasi</Link></li>
           {user && <li><Link href="/dashboard/upload" className={navLinkClass}>Upload</Link></li>}
           {user && <li><Link href="/dashboard/extract" className={navLinkClass}>Ekstraksi</Link></li>}
         </ul>

@@ -2,6 +2,10 @@ export const MAX_PHOTO_SIZE_MB = 50;
 export const MAX_PHOTO_SIZE = MAX_PHOTO_SIZE_MB * 1024 * 1024;
 export const MAX_IMAGE_PIXELS = 80_000_000;
 export const PHOTO_UPLOAD_BUCKET = "photo-uploads";
+export const PHOTO_DOWNLOAD_BUCKET = "photo-downloads";
+export const DOWNLOAD_WATERMARK_VERSION_ENCRYPTED = "iwm-v1-aes256gcm";
+export const DOWNLOAD_WATERMARK_VERSION_PLACEHOLDER = "iwm-v1-placeholder";
+export const DOWNLOAD_WATERMARK_VERSION_NONE = "none";
 export const PHOTO_MIME_TYPES = {
   jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png",
   webp: "image/webp", gif: "image/gif", avif: "image/avif",

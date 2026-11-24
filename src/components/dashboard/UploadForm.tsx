@@ -1,10 +1,12 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { MAX_PHOTO_SIZE_MB, PHOTO_ACCEPT, PHOTO_UPLOAD_BUCKET, validatePhotoFile } from "@/lib/photo-upload";
 import { readPhotoApiData, readPhotoPreview, storageUploadError } from "@/lib/photo-api";
+import { LEGAL_DOCUMENTS } from "@/lib/legal-documents";
 import type { GeminiBilingualResult } from "@/lib/server/gemini-analysis";
 import { OwnerLicenseGuidance } from "@/components/shared/PhotoLicense";
 import WatermarkPayloadField from "./WatermarkPayloadField";
@@ -22,7 +24,11 @@ async function discardUpload(path: string) {
   await fetch("/api/photos/upload", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path }), keepalive: true }).catch(() => undefined);
 }
 
-export default function UploadForm() {
+interface UploadFormProps {
+  hasAcceptedCurrentTerms?: boolean;
+}
+
+export default function UploadForm({ hasAcceptedCurrentTerms = true }: UploadFormProps = {}) {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const uploadPathRef = useRef<string | null>(null);
@@ -46,10 +52,8 @@ export default function UploadForm() {
   const [copiedField, setCopiedField] = useState<string | null>(null);
   const [payloadInput, setPayloadInput] = useState("");
   const [watermarkEnabled, setWatermarkEnabled] = useState(true);
-  // State baru ditaruh di akhir agar indeks harness tes photo-api tidak bergeser.
-  const [watermarkPassphrase, setWatermarkPassphrase] = useState("");
+  const [termsChoice, setTermsChoice] = useState<"accepted" | "declined" | null>(null);
   const payloadValid = !watermarkEnabled || watermarkPayload(payloadInput).valid;
-  const passphraseValid = !watermarkEnabled || (watermarkPassphrase.length >= 8 && watermarkPassphrase.length <= 128);
   const reviewOpen = phase === "review" || (phase === "saving" && useAI && !!editableAnalysis);
 
   useEffect(() => {
@@ -115,19 +119,28 @@ export default function UploadForm() {
   }
 
   function buildBaseFormData(captionEn: string, captionId: string, tagsEn: string[], tagsId: string[]) {
+    const publishDirectly = !wantsMicrostockLink;
     return {
-      caption_en: captionEn.trim(), caption_id: captionId.trim(), tags_en: tagsEn, tags_id: tagsId, publish_directly: !wantsMicrostockLink,
-      // Engine nyata: payload teks + passphrase ikut dikirim ke draft route hanya
-      // bila watermark aktif; sertifikat dirakit dan dienkripsi di server.
-      watermark_payload: watermarkEnabled ? watermarkPayload(payloadInput).payload : undefined,
-      watermark_passphrase: watermarkEnabled ? watermarkPassphrase : undefined,
+      caption_en: captionEn.trim(),
+      caption_id: captionId.trim(),
+      tags_en: tagsEn,
+      tags_id: tagsId,
+      publish_directly: publishDirectly,
+      watermark_enabled: watermarkEnabled,
+      ...(watermarkEnabled ? { watermark_payload: payloadInput } : {}),
+      ...(publishDirectly && !hasAcceptedCurrentTerms && termsChoice === "accepted"
+        ? {
+            legalAcknowledgment: {
+              accepted: true,
+              termsVersion: LEGAL_DOCUMENTS.terms.version,
+              privacyVersion: LEGAL_DOCUMENTS.privacy.version,
+            },
+          }
+        : {}),
     };
   }
 
   async function postToDraftRoute(data: ReturnType<typeof buildBaseFormData>) {
-    if (data.watermark_passphrase && (data.watermark_passphrase.length < 8 || data.watermark_passphrase.length > 128)) {
-      throw new Error("Passphrase watermark harus sepanjang 8–128 karakter.");
-    }
     const path = await ensureUpload();
     try {
       const res = await fetch("/api/photos/draft", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...data, path }) });
@@ -143,8 +156,11 @@ export default function UploadForm() {
   async function handleManualSubmit() {
     if (!originalFile) return;
     if (!payloadValid) { setErrorMessage("Kurangi payload hingga maksimal 512 byte."); return; }
-    if (!passphraseValid) { setErrorMessage("Isi passphrase watermark 8–128 karakter, atau nonaktifkan watermark."); return; }
     if (!manualCaption.trim()) { setErrorMessage("Caption tidak boleh kosong."); return; }
+    if (!wantsMicrostockLink && !hasAcceptedCurrentTerms && termsChoice !== "accepted") {
+      setErrorMessage("Setujui Syarat & Ketentuan terbaru terlebih dahulu sebelum mempublikasikan foto unduhan gratis.");
+      return;
+    }
     setPhase("saving"); setErrorMessage("");
 
     try {
@@ -166,7 +182,6 @@ export default function UploadForm() {
   async function runAnalysis() {
     if (!originalFile) return;
     if (!payloadValid) { setErrorMessage("Kurangi payload hingga maksimal 512 byte."); return; }
-    if (!passphraseValid) { setErrorMessage("Isi passphrase watermark 8–128 karakter, atau nonaktifkan watermark."); return; }
     setPhase("analyzing"); setErrorMessage("");
 
     try {
@@ -183,7 +198,10 @@ export default function UploadForm() {
   async function handleSaveDraft() {
     if (!originalFile || !editableAnalysis) return;
     if (!payloadValid) { setErrorMessage("Kurangi payload hingga maksimal 512 byte."); return; }
-    if (!passphraseValid) { setErrorMessage("Isi passphrase watermark 8–128 karakter, atau nonaktifkan watermark."); return; }
+    if (!wantsMicrostockLink && !hasAcceptedCurrentTerms && termsChoice !== "accepted") {
+      setErrorMessage("Setujui Syarat & Ketentuan terbaru terlebih dahulu sebelum mempublikasikan foto unduhan gratis.");
+      return;
+    }
     setPhase("saving"); setErrorMessage("");
 
     try {
@@ -280,16 +298,46 @@ export default function UploadForm() {
               {wantsMicrostockLink ? "Akan disimpan sebagai DRAF sampai tautan ditambahkan dan foto dipublikasikan di halaman Edit." : "Akan dipublikasikan GRATIS saat Anda menyimpan."}
             </p>
             <OwnerLicenseGuidance external={wantsMicrostockLink} />
-          </div>
-
-          <div className="border-b-4 border-[#111111] w-full" />
-
-          <div className="form-control bg-[#E5E5E5] border-4 border-[#111111] p-4 sm:p-6 shadow-[4px_4px_0px_#111111]">
-            <label className="label items-start p-0 mb-2" htmlFor="watermark-passphrase"><span className={labelClass}>Passphrase Hak Cipta {watermarkEnabled ? "(Wajib)" : "(Nonaktif)"}</span></label>
-            <input id="watermark-passphrase" type="password" value={watermarkPassphrase} onChange={(e) => setWatermarkPassphrase(e.target.value.slice(0, 128))} className={textInputClass} placeholder="Minimal 8 karakter — kunci enkripsi sertifikat Anda" disabled={isBusy || !watermarkEnabled} autoComplete="new-password" aria-invalid={watermarkEnabled && !passphraseValid && watermarkPassphrase.length > 0} />
-            <label className="label p-0 mt-2"><span className={subLabelClass}>{watermarkEnabled
-              ? "Sertifikat hak cipta + payload dienkripsi AES-256-GCM dan ditanam tak kasat mata ke foto asli (DCT). Passphrase TIDAK disimpan server — wajib diingat untuk pembuktian di halaman /verify."
-              : "Watermark dinonaktifkan untuk unggahan ini; foto disimpan tanpa watermark tersembunyi."}</span></label>
+            {!wantsMicrostockLink && !hasAcceptedCurrentTerms && (
+              <fieldset className="mt-4 border-t-2 border-[#111111] pt-4 space-y-2" disabled={isBusy}>
+                <legend className="text-sm font-bold uppercase text-[#111111]">
+                  Persetujuan Dokumen Terbaru ({LEGAL_DOCUMENTS.terms.version})
+                </legend>
+                <p className="text-sm font-medium text-[#111111]">
+                  Publikasi unduhan gratis memerlukan persetujuan{" "}
+                  <Link href={LEGAL_DOCUMENTS.terms.href} target="_blank" rel="noopener noreferrer" className="underline font-bold">
+                    Syarat &amp; Ketentuan ({LEGAL_DOCUMENTS.terms.version})
+                  </Link>{" "}
+                  dan{" "}
+                  <Link href={LEGAL_DOCUMENTS.privacy.href} target="_blank" rel="noopener noreferrer" className="underline font-bold">
+                    Kebijakan Privasi ({LEGAL_DOCUMENTS.privacy.version})
+                  </Link>
+                  .
+                </p>
+                <label className="flex items-start gap-3 cursor-pointer text-sm font-bold text-[#111111]">
+                  <input
+                    type="radio"
+                    name="upload_terms_acceptance"
+                    value="accepted"
+                    checked={termsChoice === "accepted"}
+                    onChange={() => { setTermsChoice("accepted"); setErrorMessage(""); }}
+                    className="radio radio-sm border-2 border-[#111111] mt-0.5 shrink-0"
+                  />
+                  <span>Saya menyetujui Syarat &amp; Ketentuan dan telah membaca Kebijakan Privasi terbaru</span>
+                </label>
+                <label className="flex items-start gap-3 cursor-pointer text-sm font-bold text-[#111111]">
+                  <input
+                    type="radio"
+                    name="upload_terms_acceptance"
+                    value="declined"
+                    checked={termsChoice === "declined"}
+                    onChange={() => setTermsChoice("declined")}
+                    className="radio radio-sm border-2 border-[#111111] mt-0.5 shrink-0"
+                  />
+                  <span>Belum menyetujui sekarang</span>
+                </label>
+              </fieldset>
+            )}
           </div>
 
           {errorMessage && phase === "compose" && (
@@ -301,11 +349,11 @@ export default function UploadForm() {
           <WatermarkPayloadField value={payloadInput} onChange={setPayloadInput} enabled={watermarkEnabled} onEnabledChange={setWatermarkEnabled} disabled={isBusy} />
 
           {useAI ? (
-            <button type="button" onClick={runAnalysis} className={primaryBtnClass} disabled={!originalFile || isBusy || !payloadValid || !passphraseValid}>
+            <button type="button" onClick={runAnalysis} className={primaryBtnClass} disabled={!originalFile || isBusy || !payloadValid}>
               {phase === "analyzing" ? "Sedang Menganalisis..." : "JALANKAN ANALISIS AI"}
             </button>
           ) : (
-            <button type="button" onClick={handleManualSubmit} className={primaryBtnClass} disabled={!originalFile || isBusy || !payloadValid || !passphraseValid}>
+            <button type="button" onClick={handleManualSubmit} className={primaryBtnClass} disabled={!originalFile || isBusy || !payloadValid}>
               {phase === "saving" ? "Menyimpan..." : saveActionLabel}
             </button>
           )}
@@ -372,10 +420,10 @@ export default function UploadForm() {
               <button type="button" onClick={() => { setPhase("compose"); setErrorMessage(""); }} className="btn bg-[#E5E5E5] hover:bg-[#111111] hover:text-white text-[#111111] border-4 border-[#111111] rounded-none font-bold text-xl uppercase h-16 shadow-[4px_4px_0px_#111111]" disabled={phase === "saving"}>
                 UBAH GAMBAR
               </button>
-              <button type="button" onClick={runAnalysis} className="btn bg-transparent hover:bg-[#E5E5E5] text-[#111111] border-4 border-[#111111] rounded-none font-bold text-xl uppercase h-16 shadow-[4px_4px_0px_#111111]" disabled={phase === "saving" || !payloadValid || !passphraseValid}>
+              <button type="button" onClick={runAnalysis} className="btn bg-transparent hover:bg-[#E5E5E5] text-[#111111] border-4 border-[#111111] rounded-none font-bold text-xl uppercase h-16 shadow-[4px_4px_0px_#111111]" disabled={phase === "saving" || !payloadValid}>
                 ULANGI AI
               </button>
-              <button type="button" onClick={handleSaveDraft} className={`${primaryBtnClass} flex-1`} disabled={phase === "saving" || !payloadValid || !passphraseValid}>
+              <button type="button" onClick={handleSaveDraft} className={`${primaryBtnClass} flex-1`} disabled={phase === "saving" || !payloadValid}>
                 {phase === "saving" ? "MENYIMPAN..." : saveActionLabel}
               </button>
             </div>

@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import RealExtractForm from "@/components/dashboard/RealExtractForm";
+import ExtractClient from "@/components/dashboard/ExtractClient";
 
 export default async function ExtractPage() {
   const supabase = await createClient();
@@ -11,9 +11,9 @@ export default async function ExtractPage() {
     <main className="container mx-auto px-4 py-12 max-w-6xl watermark-page">
       <header className="watermark-page-header">
         <h1>Ekstraksi watermark</h1>
-        <p>Unggah gambar dan masukkan passphrase pemilik foto. Paket watermark diekstrak dari koefisien DCT, lalu sertifikat didekripsi AES-256-GCM di server — kunci salah atau data yang dimanipulasi akan ditolak.</p>
+        <p>Pilih gambar untuk membaca payload watermark tersembunyi. File diunggah sementara untuk proses ekstraksi dan dibersihkan setelah selesai (dengan pembersihan otomatis harian bila terjadi gangguan).</p>
       </header>
-      <RealExtractForm />
+      <ExtractClient />
     </main>
   );
 }

@@ -1,20 +1,19 @@
 "use client";
 
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState } from "react";
 import { MAX_PHOTO_SIZE_MB, PHOTO_ACCEPT, validatePhotoFile } from "@/lib/photo-upload";
-import ExtractionResult, { type ExtractionOutcome, type ExtractionState } from "./ExtractionResult";
+import ExtractionResult, { type ExtractedPayload, type ExtractionState } from "./ExtractionResult";
 
-export type ExtractPayload = (file: File, passphrase?: string) => Promise<ExtractionOutcome>;
+export type ExtractPayload = (file: File) => Promise<ExtractedPayload>;
 
-const subscribeToHydration = () => () => {};
-const clientReady = () => true;
-const serverReady = () => false;
+export class ExtractFailureError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ExtractFailureError";
+  }
+}
 
-// Adapter disuntik dari luar: demo lama memakai simulasi nama file, aplikasi
-// nyata memakai panggilan API verifikasi (lihat RealExtractForm).
-export default function ExtractForm({ onExtract, requiresPassphrase = false }: { onExtract?: ExtractPayload; requiresPassphrase?: boolean }) {
-  // Native file changes before hydration cannot reach React's onChange handler.
-  const interactive = useSyncExternalStore(subscribeToHydration, clientReady, serverReady);
+export default function ExtractForm({ onExtract }: { onExtract?: ExtractPayload }) {
   const input = useRef<HTMLInputElement>(null);
   const generation = useRef(0);
   const lifetime = useRef({ active: true, adapter: onExtract });
@@ -24,8 +23,6 @@ export default function ExtractForm({ onExtract, requiresPassphrase = false }: {
   const [validationError, setValidationError] = useState("");
   const [snapshot, setSnapshot] = useState<{ adapter: typeof onExtract; state: ExtractionState }>({ adapter: onExtract, state: { kind: onExtract ? "empty" : "unavailable" } });
   const [copyStatus, setCopyStatus] = useState<{ adapter: typeof onExtract; value: "idle" | "copied" | "error" }>({ adapter: onExtract, value: "idle" });
-  // State baru di akhir urutan hook (konsisten dengan konvensi harness UploadForm).
-  const [passphrase, setPassphrase] = useState("");
   const state: ExtractionState = snapshot.adapter === onExtract ? snapshot.state : { kind: onExtract ? "empty" : "unavailable" };
   const copyState = copyStatus.adapter === onExtract ? copyStatus.value : "idle";
   function setState(next: ExtractionState) { setSnapshot({ adapter: onExtract, state: next }); }
@@ -58,28 +55,25 @@ export default function ExtractForm({ onExtract, requiresPassphrase = false }: {
 
   async function extract() {
     if (!file || !onExtract || state.kind === "processing") return;
-    if (requiresPassphrase && (passphrase.length < 8 || passphrase.length > 128)) return;
     const request = ++generation.current;
     setState({ kind: "processing" });
     setCopyState("idle");
     try {
-      const result = await onExtract(file, requiresPassphrase ? passphrase : undefined);
+      const result = await onExtract(file);
       if (request !== generation.current || !lifetime.current.active || lifetime.current.adapter !== onExtract) return;
-      if ("detected" in result) {
-        if (result.detected !== false) throw new Error("Hasil skenario tidak valid.");
-        setState({ kind: "not-detected" });
-        return;
-      }
       if (typeof result?.payload !== "string" || !Number.isSafeInteger(result.byteLength) ||
         result.byteLength !== new TextEncoder().encode(result.payload).byteLength) {
         throw new Error("Hasil ekstraksi tidak valid. Coba lagi atau pilih gambar lain.");
       }
       setState({ kind: "success", result });
     } catch (error) {
-      // Pesan asli dari server (mis. "Authentication Error (Invalid Tag)") penting
-      // untuk bukti penolakan kunci salah; fallback bila adapter melempar non-Error.
-      const message = error instanceof Error && error.message ? error.message : "Ekstraksi gagal. Coba lagi atau pilih gambar lain.";
-      if (request === generation.current && lifetime.current.active && lifetime.current.adapter === onExtract) setState({ kind: "error", message });
+      if (request === generation.current && lifetime.current.active && lifetime.current.adapter === onExtract) {
+        const message =
+          error instanceof ExtractFailureError && error.message.trim()
+            ? error.message
+            : "Ekstraksi gagal. Coba lagi atau pilih gambar lain.";
+        setState({ kind: "error", message });
+      }
     }
   }
 
@@ -100,12 +94,14 @@ export default function ExtractForm({ onExtract, requiresPassphrase = false }: {
         <h2 id="extraction-file-title">Gambar sumber</h2>
         <div>
           <label className="watermark-label" htmlFor="extraction-file">Pilih gambar (maks. {MAX_PHOTO_SIZE_MB} MB)</label>
-          <input id="extraction-file" ref={input} className="watermark-file" type="file" accept={PHOTO_ACCEPT} disabled={!interactive}
+          <input id="extraction-file" ref={input} className="watermark-file" type="file" accept={PHOTO_ACCEPT}
             aria-invalid={!!validationError} aria-describedby="extraction-file-help extraction-file-error"
             onChange={event => { const selected = event.target.files?.[0]; if (selected) selectFile(selected); }} />
-          <p id="extraction-file-help">{requiresPassphrase
-            ? "JPEG, PNG, WebP, GIF, TIFF, AVIF, HEIC/HEIF. Paket watermark diekstrak dari koefisien DCT lalu didekripsi AES-256-GCM di server; passphrase tidak pernah disimpan."
-            : "JPEG, PNG, WebP, GIF, TIFF, AVIF, HEIC/HEIF. File tetap di browser; hasil simulasi ditentukan oleh nama file."}</p>
+          <p id="extraction-file-help">
+            {onExtract
+              ? "JPEG, PNG, WebP, GIF, TIFF, AVIF, HEIC/HEIF. Gambar diunggah sementara untuk ekstraksi dan dibersihkan setelah proses selesai (atau oleh pembersihan harian otomatis bila pembersihan gagal)."
+              : "JPEG, PNG, WebP, GIF, TIFF, AVIF, HEIC/HEIF. File tetap di browser sampai layanan ekstraksi dihubungkan."}
+          </p>
           <p id="extraction-file-error" role="alert" className="watermark-error">{validationError}</p>
         </div>
         {file ? <>
@@ -122,15 +118,8 @@ export default function ExtractForm({ onExtract, requiresPassphrase = false }: {
             <button type="button" className="watermark-button" onClick={() => { selectFile(null); if (input.current) input.current.value = ""; }}>Reset</button>
           </div>
         </> : <div className="watermark-preview"><p>Belum ada gambar. Pilih file untuk melihat pratinjau penuh.</p></div>}
-        {requiresPassphrase && <div>
-          <label className="watermark-label" htmlFor="extraction-passphrase">Passphrase pemilik foto</label>
-          <input id="extraction-passphrase" type="password" className="watermark-file" value={passphrase}
-            onChange={event => setPassphrase(event.target.value.slice(0, 128))} autoComplete="off"
-            aria-describedby="extraction-passphrase-help" disabled={!interactive} />
-          <p id="extraction-passphrase-help">8–128 karakter. Hanya pemegang passphrase yang bisa membuka sertifikat; kunci salah atau data yang dimanipulasi ditolak oleh tag autentikasi GCM.</p>
-        </div>}
         <button type="button" className="watermark-button watermark-button-primary" onClick={extract}
-          disabled={!file || !onExtract || state.kind === "processing" || (requiresPassphrase && (passphrase.length < 8 || passphrase.length > 128))} aria-describedby={!onExtract ? "extraction-unavailable" : undefined}>
+          disabled={!file || !onExtract || state.kind === "processing"} aria-describedby={!onExtract ? "extraction-unavailable" : undefined}>
           {state.kind === "processing" ? "Memproses…" : "Ekstrak payload"}
         </button>
         {!onExtract && <p id="extraction-unavailable">Fitur ekstraksi belum terhubung. Tombol akan tersedia setelah layanan ekstraksi dihubungkan.</p>}
