@@ -7,8 +7,16 @@ const { loadTs } = require("./helpers/load-ts.cjs");
 const moduleCache = new Map();
 const core = loadTs("src/lib/watermark/core.ts", {}, moduleCache);
 const dct = loadTs("src/lib/watermark/dct.ts", {}, moduleCache);
-const { processImageForStorage } = loadTs("src/lib/server/image-processing.ts", {}, moduleCache);
+const cryptoMod = loadTs("src/lib/server/watermark-crypto.ts", {}, moduleCache);
+const watermarkBytes = loadTs("src/lib/server/watermark-bytes.ts", {}, moduleCache);
+const {
+  computeNormalizedImageHash,
+  createWatermarkedDownloadCopy,
+  processImageForStorage,
+} = loadTs("src/lib/server/image-processing.ts", {}, moduleCache);
 const { embedMetadata } = loadTs("src/lib/server/exif-writer.ts", {}, moduleCache);
+
+const TEST_SECRET = "rahasia-server-padustock-2026-extract";
 
 const userId = "11111111-1111-4111-8111-111111111111";
 const uploadPath = `${userId}/44444444-4444-4444-8444-444444444444.jpg`;
@@ -131,97 +139,167 @@ test("extract route returns 503 JSON and cleans staging when native image loader
   assert.equal(logged[0][0], "[photo-extract:load]");
 });
 
-test("extract route recovers exact UTF-8 payloads from production previews, cleans staging, and never logs payloads", async t => {
+test("extract route decrypts and authenticates AES-256-GCM certificates from previews and download copies, cleans staging, and never logs secrets or payloads", async t => {
   const logged = [];
   t.mock.method(console, "log", (...args) => logged.push(args));
   t.mock.method(console, "error", (...args) => logged.push(args));
 
-  const sourceJpeg = await sharp(createTexturedRgb(1400, 900, 123), {
-    raw: { width: 1400, height: 900, channels: 3 },
-  })
-    .jpeg({ quality: 94 })
-    .toBuffer();
+  const prevKey = process.env.WATERMARK_SECRET_KEY;
+  process.env.WATERMARK_SECRET_KEY = TEST_SECRET;
+  try {
+    const sourceJpeg = await sharp(createTexturedRgb(1400, 900, 123), {
+      raw: { width: 1400, height: 900, channels: 3 },
+    })
+      .jpeg({ quality: 94 })
+      .toBuffer();
 
-  for (const payloadText of ["PADUSTOCK-IWM-v1", "  Desa Padusan 🌿\n<script>teks</script>\t "]) {
+    const imageHash = await computeNormalizedImageHash(sourceJpeg);
+    const customNote = "Desa Padusan 🌿\n<script>teks</script>";
+    const prepared = await watermarkBytes.prepareWatermarkPayloadBytes({
+      photoId: "99999999-9999-4999-8999-999999999999",
+      userId,
+      photographer: "Fotografer Padusan",
+      licenseMode: "free",
+      imageHash,
+      customPayload: customNote,
+    });
+
     const { watermarkedBuffer } = await processImageForStorage(sourceJpeg, {
-      invisibleWatermarkPayload: core.encodeWatermarkText(payloadText),
+      invisibleWatermarkPayload: prepared.payloadBytes,
     });
     const finalPreview = embedMetadata(watermarkedBuffer, {
       caption: "Field | Sawah",
       tags: ["padusan"],
-      artist: "Fotografer",
-      copyright: "© 2026 Fotografer",
+      artist: "Fotografer Padusan",
+      copyright: "© 2026 Fotografer Padusan",
       software: "Padustock",
-      photoPageUrl: "https://padustock.vercel.app/photo/test",
+      photoPageUrl: "https://padustock.vercel.app/photo/99999999-9999-4999-8999-999999999999",
     });
+    const { downloadBuffer } = await createWatermarkedDownloadCopy(sourceJpeg, prepared.payloadBytes);
 
-    const { calls, post } = makeExtractHarness({ fileBytes: finalPreview });
-    const res = await post({ path: uploadPath });
-    assert.equal(res.status, 200);
-    const body = await res.json();
-    assert.deepEqual(body, {
-      success: true,
-      data: {
-        payload: payloadText,
-        byteLength: Buffer.byteLength(payloadText, "utf8"),
-        version: 1,
-        profile: 1,
-      },
-    });
-    assert.ok(calls.some(([name, bucket]) => name === "remove" && bucket === "photo-uploads"));
-    assert.ok(!calls.some(([name]) => name === "db"));
-    assert.equal(JSON.stringify(logged).includes(payloadText), false);
+    for (const [label, fileBytes, expectHashMatch] of [
+      ["preview", finalPreview, null],
+      ["download", downloadBuffer, true],
+    ]) {
+      const { calls, post } = makeExtractHarness({ fileBytes });
+      const res = await post({ path: uploadPath });
+      assert.equal(res.status, 200, label);
+      const body = await res.json();
+      assert.equal(body.success, true);
+      assert.equal(body.data.authenticated, true);
+      assert.equal(body.data.certificate.photo_id, "99999999-9999-4999-8999-999999999999");
+      assert.equal(body.data.certificate.photographer, "Fotografer Padusan");
+      assert.equal(body.data.certificate.license_terms, "CC BY-NC-ND 4.0");
+      assert.equal(body.data.certificate.reference_payload, customNote);
+      assert.equal(body.data.byteLength, Buffer.byteLength(body.data.payload, "utf8"));
+      assert.equal(body.data.version, 1);
+      assert.equal(body.data.profile, 1);
+      if (expectHashMatch !== null) assert.equal(body.data.hashMatch, expectHashMatch);
+      assert.ok(calls.some(([name, bucket]) => name === "remove" && bucket === "photo-uploads"));
+      assert.ok(!calls.some(([name]) => name === "db"));
+    }
+
+    // Wrong server key -> 422 AUTH_FAILED (never displays unauthenticated data!)
+    process.env.WATERMARK_SECRET_KEY = "kunci-server-berbeda-2026";
+    {
+      const { calls, post } = makeExtractHarness({ fileBytes: downloadBuffer });
+      const res = await post({ path: uploadPath });
+      assert.equal(res.status, 422);
+      const body = await res.json();
+      assert.equal(body.success, false);
+      assert.equal(body.code, "AUTH_FAILED");
+      assert.equal(body.data, undefined);
+      assert.ok(calls.some(([name, bucket]) => name === "remove" && bucket === "photo-uploads"));
+    }
+
+    // Missing server key -> 503 KEY_UNAVAILABLE (fails closed!)
+    delete process.env.WATERMARK_SECRET_KEY;
+    {
+      const { calls, post } = makeExtractHarness({ fileBytes: downloadBuffer });
+      const res = await post({ path: uploadPath });
+      assert.equal(res.status, 503);
+      const body = await res.json();
+      assert.equal(body.success, false);
+      assert.equal(body.code, "KEY_UNAVAILABLE");
+      assert.ok(calls.some(([name, bucket]) => name === "remove" && bucket === "photo-uploads"));
+    }
+
+    const logDump = JSON.stringify(logged);
+    assert.equal(logDump.includes(customNote), false);
+    assert.equal(logDump.includes(TEST_SECRET), false);
+  } finally {
+    if (prevKey === undefined) delete process.env.WATERMARK_SECRET_KEY;
+    else process.env.WATERMARK_SECRET_KEY = prevKey;
   }
 });
 
-test("extract route returns explicit 422 error codes and cleans staging for unmarked, invalid, tampered, unsupported, and non-UTF-8 inputs", async () => {
-  const unmarkedJpeg = await sharp(createTexturedRgb(640, 480, 77), {
-    raw: { width: 640, height: 480, channels: 3 },
-  })
-    .jpeg({ quality: 80 })
-    .toBuffer();
+test("extract route returns explicit 422 error codes and cleans staging for unmarked, invalid, tampered, unsupported, and unauthenticated inputs", async () => {
+  const prevKey = process.env.WATERMARK_SECRET_KEY;
+  process.env.WATERMARK_SECRET_KEY = TEST_SECRET;
+  try {
+    const unmarkedJpeg = await sharp(createTexturedRgb(800, 600, 77), {
+      raw: { width: 800, height: 600, channels: 3 },
+    })
+      .jpeg({ quality: 80 })
+      .toBuffer();
 
-  // Build lossless PNGs with fault-injected watermark packets to exercise every protocol error code
-  const width = 400;
-  const height = 400;
-  const baseRgb = createTexturedRgb(width, height, 61);
-  const makeCustomPng = async (version, profile, lengthField, payloadBytes, corruptDigest = false) => {
-    const body = Buffer.alloc(8 + payloadBytes.length);
-    body.write("PDIW", 0, "ascii");
-    body[4] = version;
-    body[5] = profile;
-    body[6] = (lengthField >>> 8) & 0xff;
-    body[7] = lengthField & 0xff;
-    payloadBytes.copy(body, 8);
-    const digest = crypto.createHash("sha256").update(body).digest();
-    if (corruptDigest) digest[0] ^= 0xff;
-    const outRgb = dct.embedPacketInRgb(baseRgb, width, height, new Uint8Array(Buffer.concat([body, digest])));
-    return sharp(Buffer.from(outRgb), { raw: { width, height, channels: 3 } }).png().toBuffer();
-  };
+    const width = 400;
+    const height = 400;
+    const baseRgb = createTexturedRgb(width, height, 61);
+    const makeCustomPng = async (version, profile, lengthField, payloadBytes, corruptDigest = false) => {
+      const body = Buffer.alloc(8 + payloadBytes.length);
+      body.write("PDIW", 0, "ascii");
+      body[4] = version;
+      body[5] = profile;
+      body[6] = (lengthField >>> 8) & 0xff;
+      body[7] = lengthField & 0xff;
+      payloadBytes.copy(body, 8);
+      const digest = crypto.createHash("sha256").update(body).digest();
+      if (corruptDigest) digest[0] ^= 0xff;
+      const outRgb = dct.embedPacketInRgb(baseRgb, width, height, new Uint8Array(Buffer.concat([body, digest])));
+      return sharp(Buffer.from(outRgb), { raw: { width, height, channels: 3 } }).png().toBuffer();
+    };
 
-  const invalidUtf8Jpeg = await core.embedWatermark(unmarkedJpeg, new Uint8Array([0xff, 0xfe, 0x80, 0x41]));
+    // Unencrypted plaintext watermark -> rejected as UNAUTHENTICATED_PAYLOAD
+    const plaintextJpeg = await core.embedWatermark(unmarkedJpeg, core.encodeWatermarkText("PADUSTOCK-IWM-v1"));
 
-  const cases = [
-    ["unmarked", unmarkedJpeg, "NO_WATERMARK"],
-    ["corrupt", Buffer.from("not an image"), "INVALID_IMAGE"],
-    ["svg", Buffer.from('<svg width="400" height="400"></svg>'), "INVALID_IMAGE"],
-    ["bad-version", await makeCustomPng(2, 1, 4, Buffer.from("test")), "UNSUPPORTED_VERSION"],
-    ["bad-profile", await makeCustomPng(1, 2, 4, Buffer.from("test")), "UNSUPPORTED_PROFILE"],
-    ["bad-length", await makeCustomPng(1, 1, 600, Buffer.from("test")), "INVALID_LENGTH"],
-    ["tampered", await makeCustomPng(1, 1, 4, Buffer.from("test"), true), "INTEGRITY_FAILED"],
-    ["invalid-utf8", invalidUtf8Jpeg, "INVALID_UTF8"],
-  ];
+    // Valid PDIW outer packet containing tampered AES-GCM ciphertext -> rejected as AUTH_FAILED
+    const cert = cryptoMod.buildCertificate({
+      photoId: "photo-tamper",
+      photographer: "Uji",
+      imageHash: "a".repeat(64),
+    });
+    const { packet: validPacket } = await cryptoMod.encryptCertificate(cert, TEST_SECRET);
+    const tamperedPacket = Buffer.from(validPacket);
+    tamperedPacket[42] ^= 0x01;
+    const tamperedCryptoJpeg = await core.embedWatermark(unmarkedJpeg, new Uint8Array(tamperedPacket));
 
-  for (const [label, fileBytes, expectedCode] of cases) {
-    const { calls, post } = makeExtractHarness({ fileBytes });
-    const res = await post({ path: uploadPath });
-    assert.equal(res.status, 422, `case ${label}`);
-    const body = await res.json();
-    assert.equal(body.success, false, `case ${label}`);
-    assert.equal(body.code, expectedCode, `case ${label}`);
-    assert.equal(typeof body.error, "string");
-    assert.ok(body.error.length > 0);
-    assert.ok(calls.some(([name, bucket]) => name === "remove" && bucket === "photo-uploads"), `cleanup ${label}`);
+    const cases = [
+      ["unmarked", unmarkedJpeg, "NO_WATERMARK"],
+      ["corrupt", Buffer.from("not an image"), "INVALID_IMAGE"],
+      ["svg", Buffer.from('<svg width="400" height="400"></svg>'), "INVALID_IMAGE"],
+      ["bad-version", await makeCustomPng(2, 1, 4, Buffer.from("test")), "UNSUPPORTED_VERSION"],
+      ["bad-profile", await makeCustomPng(1, 2, 4, Buffer.from("test")), "UNSUPPORTED_PROFILE"],
+      ["bad-length", await makeCustomPng(1, 1, 600, Buffer.from("test")), "INVALID_LENGTH"],
+      ["tampered-outer", await makeCustomPng(1, 1, 4, Buffer.from("test"), true), "INTEGRITY_FAILED"],
+      ["unauthenticated-plaintext", plaintextJpeg, "UNAUTHENTICATED_PAYLOAD"],
+      ["tampered-ciphertext", tamperedCryptoJpeg, "AUTH_FAILED"],
+    ];
+
+    for (const [label, fileBytes, expectedCode] of cases) {
+      const { calls, post } = makeExtractHarness({ fileBytes });
+      const res = await post({ path: uploadPath });
+      assert.equal(res.status, 422, `case ${label}`);
+      const body = await res.json();
+      assert.equal(body.success, false, `case ${label}`);
+      assert.equal(body.code, expectedCode, `case ${label}`);
+      assert.equal(typeof body.error, "string");
+      assert.ok(body.error.length > 0);
+      assert.ok(calls.some(([name, bucket]) => name === "remove" && bucket === "photo-uploads"), `cleanup ${label}`);
+    }
+  } finally {
+    if (prevKey === undefined) delete process.env.WATERMARK_SECRET_KEY;
+    else process.env.WATERMARK_SECRET_KEY = prevKey;
   }
 });
 

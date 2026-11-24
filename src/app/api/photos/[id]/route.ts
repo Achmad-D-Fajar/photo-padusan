@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requirePhotoUser, removePhotoObject } from "@/lib/server/photo-upload";
 import { ApiError, apiErrorResponse, readJson } from "@/lib/server/api-error";
 import {
+  DOWNLOAD_WATERMARK_VERSION_ENCRYPTED,
   DOWNLOAD_WATERMARK_VERSION_NONE,
   DOWNLOAD_WATERMARK_VERSION_PLACEHOLDER,
   MAX_PHOTO_SIZE,
@@ -20,8 +21,13 @@ import { externalLicenseLink } from "@/lib/photo-licensing";
 import { attachLicenseHistory } from "@/lib/queries/photo-license-history";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { embedMetadata } from "@/lib/server/exif-writer";
-import { createWatermarkedDownloadCopy, processImageForStorage } from "@/lib/server/image-processing";
+import {
+  computeNormalizedImageHash,
+  createWatermarkedDownloadCopy,
+  processImageForStorage,
+} from "@/lib/server/image-processing";
 import { prepareWatermarkPayloadBytes } from "@/lib/server/watermark-bytes";
+import { WatermarkCryptoError, isEncryptedWatermarkPacket } from "@/lib/server/watermark-crypto";
 import { WatermarkError, extractWatermark } from "@/lib/watermark/core";
 
 export const runtime = "nodejs";
@@ -249,27 +255,43 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
               }
               throw wmError;
             }
-            nextDownloadWatermarkVersion = DOWNLOAD_WATERMARK_VERSION_PLACEHOLDER;
+            nextDownloadWatermarkVersion = isEncryptedWatermarkPacket(reusedPayload)
+              ? DOWNLOAD_WATERMARK_VERSION_ENCRYPTED
+              : DOWNLOAD_WATERMARK_VERSION_PLACEHOLDER;
           } else {
             // Existing preview had no safely extractable watermark (e.g., unmarked legacy photo
-            // confirmed by owner, or damaged preview). Prepare ONE payload and regenerate BOTH
-            // preview and full-resolution download copy from those exact same bytes.
-            const prepared = await prepareWatermarkPayloadBytes({
-              photoId: photo.id,
-              userId: user.id,
-            });
+            // confirmed by owner, or damaged preview). Prepare ONE encrypted certificate and
+            // regenerate BOTH preview and full-resolution download copy from those exact bytes.
+            const { data: profile } = await supabase
+              .from("profiles")
+              .select("display_name, full_name")
+              .eq("id", user.id)
+              .single();
+            const artist = profile?.full_name || profile?.display_name || "Fotografer Padustock";
+            let prepared: Awaited<ReturnType<typeof prepareWatermarkPayloadBytes>>;
+            try {
+              const imageHash = await computeNormalizedImageHash(rawBuffer);
+              prepared = await prepareWatermarkPayloadBytes({
+                photoId: photo.id,
+                userId: user.id,
+                photographer: artist,
+                licenseMode: "free",
+                imageHash,
+              });
+            } catch (cryptoErr) {
+              if (cryptoErr instanceof WatermarkCryptoError) {
+                if (cryptoErr.code === "KEY_UNAVAILABLE") throw new ApiError(503, cryptoErr.message);
+                if (cryptoErr.code === "PAYLOAD_TOO_LARGE") throw new ApiError(422, cryptoErr.message);
+                throw new ApiError(400, cryptoErr.message);
+              }
+              throw cryptoErr;
+            }
             try {
               const { watermarkedBuffer } = await processImageForStorage(rawBuffer, {
                 invisibleWatermarkPayload: prepared.payloadBytes,
               });
               ({ downloadBuffer } = await createWatermarkedDownloadCopy(rawBuffer, prepared.payloadBytes));
 
-              const { data: profile } = await supabase
-                .from("profiles")
-                .select("display_name, full_name")
-                .eq("id", user.id)
-                .single();
-              const artist = profile?.full_name || profile?.display_name || "Fotografer Padustock";
               regeneratedPreviewBuffer = embedMetadata(watermarkedBuffer, {
                 caption: `${captionEn} | ${captionId}`,
                 tags: [...new Set([...tagsEn, ...tagsId])].slice(0, 30),

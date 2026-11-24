@@ -218,3 +218,67 @@ export async function createWatermarkedDownloadCopy(
     jpegQuality: DOWNLOAD_COPY_JPEG_QUALITY,
   };
 }
+
+const DHASH_WIDTH = 17;
+const DHASH_HEIGHT = 16; // 16 * 16 = 256 bits = 64 lowercase hex characters
+const DEFAULT_MAX_HASH_HAMMING_BITS = 32; // >= 87.5% perceptual gradient similarity
+
+/**
+ * Compute a 256-bit perceptual difference hash (16x16 horizontal gradient dHash,
+ * 64 lowercase hex chars) over the oriented, white-flattened grayscale image.
+ * Stable across JPEG Q80/Q92 recompression and invisible DCT embedding, while
+ * strongly rejecting copy-paste transplants onto unrelated photos.
+ */
+export async function computeNormalizedImageHash(inputBuffer: Buffer): Promise<string> {
+  const image = await openPhotoImage(inputBuffer);
+  let data: Buffer;
+  try {
+    ({ data } = await image
+      .rotate()
+      .flatten({ background: "#ffffff" })
+      .removeAlpha()
+      .grayscale()
+      .resize(DHASH_WIDTH, DHASH_HEIGHT, { fit: "fill" })
+      .raw()
+      .toBuffer({ resolveWithObject: true }));
+  } catch {
+    throw new ApiError(422, "Gagal membaca gambar. File mungkin rusak.");
+  }
+  const bytes = Buffer.alloc(32);
+  let bitIndex = 0;
+  for (let y = 0; y < DHASH_HEIGHT; y++) {
+    const rowOffset = y * DHASH_WIDTH;
+    for (let x = 0; x < DHASH_WIDTH - 1; x++) {
+      if (data[rowOffset + x] >= data[rowOffset + x + 1]) {
+        bytes[bitIndex >> 3] |= 1 << (7 - (bitIndex & 7));
+      }
+      bitIndex++;
+    }
+  }
+  return bytes.toString("hex");
+}
+
+export function imageHashHammingDistance(hashA: string, hashB: string): number {
+  if (!/^[0-9a-f]{64}$/i.test(hashA) || !/^[0-9a-f]{64}$/i.test(hashB)) {
+    return 256;
+  }
+  const a = Buffer.from(hashA, "hex");
+  const b = Buffer.from(hashB, "hex");
+  let distance = 0;
+  for (let i = 0; i < 32; i++) {
+    let diff = a[i] ^ b[i];
+    while (diff !== 0) {
+      diff &= diff - 1;
+      distance++;
+    }
+  }
+  return distance;
+}
+
+export function isNormalizedImageHashMatch(
+  expectedHash: string,
+  actualHash: string,
+  maxHammingBits: number = DEFAULT_MAX_HASH_HAMMING_BITS,
+): boolean {
+  return imageHashHammingDistance(expectedHash, actualHash) <= maxHammingBits;
+}

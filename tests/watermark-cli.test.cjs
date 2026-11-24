@@ -183,6 +183,8 @@ test("Step 5: saved preview output from /api/photos/draft recovers exact bytes v
   const logged = [];
   t.mock.method(console, "error", (...args) => logged.push(args));
   t.mock.method(console, "log", (...args) => logged.push(args));
+  const prevSecret = process.env.WATERMARK_SECRET_KEY;
+  process.env.WATERMARK_SECRET_KEY = "rahasia-server-padustock-2026-step5";
 
   try {
     const userId = "11111111-1111-4111-8111-111111111111";
@@ -303,37 +305,48 @@ test("Step 5: saved preview output from /api/photos/draft recovers exact bytes v
       return { previewFile, downloadFile };
     }
 
-    // 1. Blank input resolves to default PADUSTOCK-IWM-v1 in BOTH preview and full-res download copy
+    // 1. Blank input encrypts ownership certificate ONCE and embeds identical bytes in BOTH preview and full-res download copy
     const defaultOut = await runDraftAndSaveOutputs(
       { watermark_enabled: true, watermark_payload: "   " },
       "draft-default"
     );
-    for (const file of [defaultOut.previewFile, defaultOut.downloadFile]) {
-      const raw = runCli([file, "--raw"], { raw: true });
-      assert.equal(raw.status, 0);
-      assert.deepEqual(raw.stdout, Buffer.from("PADUSTOCK-IWM-v1", "utf8"));
-      const json = runCli([file, "--json"]);
-      assert.equal(json.status, 0, json.stderr);
-      assert.equal(JSON.parse(json.stdout).payload, "PADUSTOCK-IWM-v1");
+    const previewRaw = runCli([defaultOut.previewFile, "--raw"], { raw: true });
+    const downloadRaw = runCli([defaultOut.downloadFile, "--raw"], { raw: true });
+    assert.equal(previewRaw.status, 0);
+    assert.equal(downloadRaw.status, 0);
+    assert.deepEqual(previewRaw.stdout, downloadRaw.stdout);
+    assert.equal(previewRaw.stdout.subarray(0, 2).toString("ascii"), "PW");
+
+    for (const [label, file] of [["preview", defaultOut.previewFile], ["download", defaultOut.downloadFile]]) {
+      const dec = runCli([file, "--decrypt"]);
+      assert.equal(dec.status, 0, `${label}: ${dec.stderr}`);
+      const parsed = JSON.parse(dec.stdout);
+      assert.equal(parsed.ok, true);
+      assert.equal(parsed.authenticated, true);
+      assert.equal(parsed.certificate.photographer, "Fotografer Desa");
+      assert.equal(parsed.certificate.license_terms, "CC BY-NC-ND 4.0");
+      assert.equal(parsed.certificate.reference_payload, undefined);
+      if (label === "download") assert.equal(parsed.hashMatch, true);
     }
     const dlMeta = await sharp(defaultOut.downloadFile).metadata();
     assert.deepEqual([dlMeta.width, dlMeta.height], [1600, 1000]);
 
-    // 2. Custom Indonesian + emoji + multiline + whitespace payload recovers exact bytes in BOTH outputs
+    // 2. Custom Indonesian + emoji + multiline + whitespace payload recovers verbatim inside encrypted certificate in BOTH outputs
     const customPayload = "  Desa Padusan 🌿\nLangkah 5 — uji simpan\t ";
     const customOut = await runDraftAndSaveOutputs(
       { watermark_enabled: true, watermark_payload: customPayload },
       "draft-custom"
     );
+    const customPreviewRaw = runCli([customOut.previewFile, "--raw"], { raw: true });
+    const customDownloadRaw = runCli([customOut.downloadFile, "--raw"], { raw: true });
+    assert.equal(customPreviewRaw.status, 0);
+    assert.equal(customDownloadRaw.status, 0);
+    assert.deepEqual(customPreviewRaw.stdout, customDownloadRaw.stdout);
     for (const file of [customOut.previewFile, customOut.downloadFile]) {
-      const raw = runCli([file, "--raw"], { raw: true });
-      assert.equal(raw.status, 0);
-      assert.deepEqual(raw.stdout, Buffer.from(customPayload, "utf8"));
-      const json = runCli([file, "--json"]);
-      assert.equal(json.status, 0, json.stderr);
-      const parsed = JSON.parse(json.stdout);
-      assert.equal(parsed.payload, customPayload);
-      assert.equal(parsed.byteLength, Buffer.byteLength(customPayload, "utf8"));
+      const dec = runCli([file, "--decrypt"]);
+      assert.equal(dec.status, 0, dec.stderr);
+      const parsed = JSON.parse(dec.stdout);
+      assert.equal(parsed.certificate.reference_payload, customPayload);
     }
 
     // 3. Explicit opt-out produces preview AND full-res download copy with NO invisible watermark
@@ -348,17 +361,24 @@ test("Step 5: saved preview output from /api/photos/draft recovers exact bytes v
       assert.equal(JSON.parse(json.stderr).code, "NO_WATERMARK");
     }
 
-    // 4. Paid/external draft produces watermarked preview ONLY and no full-resolution download copy
+    // 4. Paid/external draft produces watermarked preview ONLY and no full-resolution download copy (and does NOT hardcode CC)
     const paidDraft = await runDraftAndSaveOutputs(
       { publish_directly: false, watermark_enabled: true, watermark_payload: "PADUSTOCK-IWM-v1" },
       "draft-paid"
     );
     assert.equal(paidDraft.downloadFile, null);
-    assert.equal(JSON.parse(runCli([paidDraft.previewFile, "--json"]).stdout).payload, "PADUSTOCK-IWM-v1");
+    const paidDec = runCli([paidDraft.previewFile, "--decrypt"]);
+    assert.equal(paidDec.status, 0, paidDec.stderr);
+    const paidParsed = JSON.parse(paidDec.stdout);
+    assert.equal(paidParsed.authenticated, true);
+    assert.ok(!paidParsed.certificate.license_terms.includes("CC BY"));
 
-    // Verify custom payload was never logged anywhere on the server
+    // Verify custom payload and secret key were never logged anywhere on the server
     assert.equal(JSON.stringify(logged).includes(customPayload), false);
+    assert.equal(JSON.stringify(logged).includes(process.env.WATERMARK_SECRET_KEY), false);
   } finally {
+    if (prevSecret === undefined) delete process.env.WATERMARK_SECRET_KEY;
+    else process.env.WATERMARK_SECRET_KEY = prevSecret;
     fs.rmSync(tempDir, { recursive: true, force: true });
   }
 });

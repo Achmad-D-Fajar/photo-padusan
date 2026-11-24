@@ -11,16 +11,19 @@ import loadTsModule from "./load-ts.cjs";
 const MAX_IMAGE_BYTES = 50 * 1024 * 1024;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CORE_PATH = path.resolve(__dirname, "../src/lib/watermark/core.ts");
+const CRYPTO_PATH = path.resolve(__dirname, "../src/lib/server/watermark-crypto.ts");
+const IMAGE_PROC_PATH = path.resolve(__dirname, "../src/lib/server/image-processing.ts");
 
 const USAGE = [
   "Penggunaan:",
-  "  node scripts/extract-watermark.mjs <path-gambar> [--raw | --hex | --json]",
+  "  node scripts/extract-watermark.mjs <path-gambar> [--raw | --hex | --json | --decrypt]",
   "",
   "Opsi:",
-  "  --raw     Tulis byte payload mentah persis ke stdout (tanpa newline tambahan).",
-  "  --hex     Tulis byte payload dalam format heksadesimal huruf kecil.",
-  "  --json    Tulis hasil ekstraksi terstruktur dalam format JSON.",
-  "  -h,--help Tampilkan bantuan ini.",
+  "  --raw      Tulis byte payload mentah persis ke stdout (tanpa newline tambahan).",
+  "  --hex      Tulis byte payload dalam format heksadesimal huruf kecil.",
+  "  --json     Tulis hasil ekstraksi terstruktur dalam format JSON.",
+  "  --decrypt  Dekripsi dan autentikasi sertifikat AES-256-GCM memakai WATERMARK_SECRET_KEY (output JSON).",
+  "  -h,--help  Tampilkan bantuan ini.",
 ].join("\n");
 
 function parseArgs(argv) {
@@ -31,9 +34,9 @@ function parseArgs(argv) {
     if (arg === "-h" || arg === "--help") {
       return { help: true };
     }
-    if (arg === "--raw" || arg === "--hex" || arg === "--json") {
+    if (arg === "--raw" || arg === "--hex" || arg === "--json" || arg === "--decrypt") {
       if (mode !== "text") {
-        throw new Error("Pilih hanya satu mode keluaran (--raw, --hex, atau --json).");
+        throw new Error("Pilih hanya satu mode keluaran (--raw, --hex, --json, atau --decrypt).");
       }
       mode = arg.slice(2);
       continue;
@@ -55,7 +58,7 @@ function parseArgs(argv) {
 }
 
 function writeError(mode, code, message) {
-  if (mode === "json") {
+  if (mode === "json" || mode === "decrypt") {
     process.stderr.write(`${JSON.stringify({ ok: false, code, error: message })}\n`);
   } else {
     process.stderr.write(`[${code}] ${message}\n`);
@@ -124,6 +127,34 @@ async function main() {
       return;
     }
 
+    if (mode === "decrypt") {
+      const result = await core.extractWatermark(imageBuffer);
+      const cache = new Map();
+      const cryptoMod = loadTsModule.loadTs(CRYPTO_PATH, {}, cache);
+      const imageProc = loadTsModule.loadTs(IMAGE_PROC_PATH, {}, cache);
+      if (!cryptoMod.isEncryptedWatermarkPacket(result.payload)) {
+        writeError(mode, "UNAUTHENTICATED_PAYLOAD", "Watermark ditemukan tetapi bukan paket sertifikat terenkripsi Padustock.");
+        process.exitCode = 1;
+        return;
+      }
+      const secretKey = cryptoMod.getWatermarkSecretKey();
+      const buf = Buffer.from(result.payload.buffer, result.payload.byteOffset, result.payload.byteLength);
+      const { certificate, packetBytes } = await cryptoMod.decryptPacket(buf, secretKey);
+      const actualHash = await imageProc.computeNormalizedImageHash(imageBuffer);
+      process.stdout.write(
+        `${JSON.stringify({
+          ok: true,
+          authenticated: true,
+          version: result.version,
+          profile: result.profile,
+          packetBytes,
+          hashMatch: imageProc.isNormalizedImageHashMatch(certificate.image_hash, actualHash),
+          certificate,
+        })}\n`
+      );
+      return;
+    }
+
     if (mode === "json") {
       const result = await core.extractWatermark(imageBuffer);
       const buf = Buffer.from(result.payload.buffer, result.payload.byteOffset, result.payload.byteLength);
@@ -158,9 +189,11 @@ async function main() {
     if (error instanceof core.WatermarkError) {
       const hint =
         error.code === "INVALID_UTF8" && mode === "text"
-          ? " Gunakan --raw, --hex, atau --json untuk membaca byte biner mentah."
+          ? " Gunakan --raw, --hex, --json, atau --decrypt untuk membaca byte biner/sertifikat terenkripsi."
           : "";
       writeError(mode, error.code, `${error.message}${hint}`);
+    } else if (error && typeof error === "object" && "code" in error && typeof error.code === "string") {
+      writeError(mode, error.code, error instanceof Error ? error.message : "Ekstraksi gagal.");
     } else {
       writeError(mode, "EXTRACTION_ERROR", error instanceof Error ? error.message : "Ekstraksi gagal.");
     }

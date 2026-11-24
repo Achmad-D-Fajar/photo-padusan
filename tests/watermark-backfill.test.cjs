@@ -11,7 +11,7 @@ const { runPhotoDownloadBackfill, hasAuthorizedTermsAcceptance } = loadTs(
   {},
   moduleCache
 );
-const { extractWatermark, extractWatermarkText, encodeWatermarkText, WatermarkError } = loadTs(
+const { extractWatermark, WatermarkError } = loadTs(
   "src/lib/watermark/core.ts",
   {},
   moduleCache
@@ -146,11 +146,15 @@ test("hasAuthorizedTermsAcceptance enforces exact current terms-3 and privacy-3 
 });
 
 test("backfill dry-run reports unknown preferences and unauthorized terms without writing; apply refuses unpublished terms by default, and when allowed is idempotent, versioned, and rolls back on DB failure", async () => {
-  const sourceJpeg = await sharp(createTexturedRgb(640, 480, 99), {
-    raw: { width: 640, height: 480, channels: 3 },
-  })
-    .jpeg({ quality: 92 })
-    .toBuffer();
+  const prevSecret = process.env.WATERMARK_SECRET_KEY;
+  process.env.WATERMARK_SECRET_KEY = "rahasia-server-padustock-2026-backfill";
+  const { decryptPacket } = loadTs("src/lib/server/watermark-crypto.ts", {}, moduleCache);
+  try {
+    const sourceJpeg = await sharp(createTexturedRgb(800, 600, 99), {
+      raw: { width: 800, height: 600, channels: 3 },
+    })
+      .jpeg({ quality: 92 })
+      .toBuffer();
 
   const authOwner = "11111111-1111-4111-8111-111111111111";
   const legacyOwner = "22222222-2222-4222-8222-222222222222";
@@ -355,12 +359,17 @@ test("backfill dry-run reports unknown preferences and unauthorized terms withou
   // Rolled-back photo-db-fail upload must have been deleted
   assert.equal(removed.filter(p => p.includes("photo-db-fail")).length, 1);
 
-  // Verify embedded watermark on photo-wm-enabled and NO_WATERMARK on photo-wm-optout
+  // Verify embedded AES-256-GCM encrypted certificate on photo-wm-enabled and NO_WATERMARK on photo-wm-optout
   const wmRow = rows.find(r => r.id === "photo-wm-enabled");
-  assert.equal(wmRow.download_watermark_version, "iwm-v1-placeholder");
+  assert.equal(wmRow.download_watermark_version, "iwm-v1-aes256gcm");
   const wmPath = wmRow.download_url.split("/photo-downloads/")[1];
-  const wmExtracted = await extractWatermarkText(downloads.get(wmPath));
-  assert.equal(wmExtracted.payload, "PADUSTOCK-IWM-v1");
+  const wmExtracted = await extractWatermark(downloads.get(wmPath));
+  const { certificate: wmCert } = await decryptPacket(
+    Buffer.from(wmExtracted.payload),
+    process.env.WATERMARK_SECRET_KEY
+  );
+  assert.equal(wmCert.photo_id, "photo-wm-enabled");
+  assert.equal(wmCert.license_terms, "CC BY-NC-ND 4.0");
 
   const optRow = rows.find(r => r.id === "photo-wm-optout");
   assert.equal(optRow.download_watermark_version, "none");
@@ -375,23 +384,28 @@ test("backfill dry-run reports unknown preferences and unauthorized terms withou
   assert.equal(secondRun.counts.updated, 0);
   assert.equal(secondRun.counts.skipped_already_current, 3); // already-done + wm-enabled + wm-optout
 
-  // 4. Versioned regeneration upgrades only placeholder copies to a new version and cleans superseded objects
-  const oldWmPath = wmPath;
+  // 4. Versioned regeneration upgrades ONLY legacy placeholder copies (iwm-v1-placeholder) to encrypted iwm-v1-aes256gcm
   const regen = await runPublishedBackfill(adapter, {
     apply: true,
     regenerateVersion: "iwm-v1-placeholder",
-    targetWatermarkVersion: "iwm-v1-upgraded",
-    resolvePayload: photo => encodeWatermarkText(`UPGRADED:${photo.id}`),
+    targetWatermarkVersion: "iwm-v1-aes256gcm",
   });
-  assert.equal(regen.counts.updated, 2); // photo-wm-enabled + photo-already-done
-  assert.equal(regen.counts.skipped_already_current, 1); // photo-wm-optout ("none") untouched
-  assert.ok(removed.includes(oldWmPath));
-
-  const upgradedPath = wmRow.download_url.split("/photo-downloads/")[1];
-  assert.equal(wmRow.download_watermark_version, "iwm-v1-upgraded");
-  const upgradedExtracted = await extractWatermarkText(downloads.get(upgradedPath));
-  assert.equal(upgradedExtracted.payload, "UPGRADED:photo-wm-enabled");
+  assert.equal(regen.counts.updated, 1); // photo-already-done (iwm-v1-placeholder -> iwm-v1-aes256gcm)
+  assert.equal(regen.counts.skipped_already_current, 2); // photo-wm-enabled (already iwm-v1-aes256gcm) + photo-wm-optout ("none")
+  const upgradedRow = rows.find(r => r.id === "photo-already-done");
+  assert.equal(upgradedRow.download_watermark_version, "iwm-v1-aes256gcm");
+  const upgradedPath = upgradedRow.download_url.split("/photo-downloads/")[1];
+  const upgradedExtracted = await extractWatermark(downloads.get(upgradedPath));
+  const { certificate: upgradedCert } = await decryptPacket(
+    Buffer.from(upgradedExtracted.payload),
+    process.env.WATERMARK_SECRET_KEY
+  );
+  assert.equal(upgradedCert.photo_id, "photo-already-done");
   assert.equal(originalsMutated.length, 0);
+  } finally {
+    if (prevSecret === undefined) delete process.env.WATERMARK_SECRET_KEY;
+    else process.env.WATERMARK_SECRET_KEY = prevSecret;
+  }
 });
 
 test("backfill CLI --help and invalid flags behave cleanly without touching remote services", () => {

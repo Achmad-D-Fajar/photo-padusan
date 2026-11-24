@@ -102,8 +102,20 @@ export async function extractPhotoWatermark(file: File): Promise<ExtractedPayloa
       throw new ExtractFailureError("Hasil ekstraksi tidak valid. Coba lagi atau pilih gambar lain.");
     }
 
+    const certificate =
+      data.certificate && typeof data.certificate === "object" && !Array.isArray(data.certificate)
+        ? (data.certificate as ExtractedPayload["certificate"])
+        : undefined;
+
     succeeded = true;
-    return { payload: data.payload, byteLength: data.byteLength as number };
+    return {
+      payload: data.payload,
+      byteLength: data.byteLength as number,
+      ...(data.authenticated === true ? { authenticated: true } : {}),
+      ...(certificate ? { certificate } : {}),
+      ...(typeof data.hashMatch === "boolean" ? { hashMatch: data.hashMatch } : {}),
+      ...(typeof data.packetBytes === "number" ? { packetBytes: data.packetBytes } : {}),
+    };
   } finally {
     if (!succeeded) {
       await discardStagedUpload(staged.path);

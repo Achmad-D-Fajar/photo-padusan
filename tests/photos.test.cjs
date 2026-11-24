@@ -3,6 +3,8 @@ const assert = require("node:assert/strict");
 const { loadTs } = require("./helpers/load-ts.cjs");
 const userId = "11111111-1111-4111-8111-111111111111";
 const uploadPath = `${userId}/22222222-2222-4222-8222-222222222222.heic`;
+const TEST_WM_SECRET = "rahasia-server-padustock-2026-photos-test";
+process.env.WATERMARK_SECRET_KEY ??= TEST_WM_SECRET;
 const request = body => new Request("http://localhost/api/photos/draft", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
 
 for (const authenticated of [false, true]) {
@@ -83,6 +85,7 @@ function draftHarness(failure, { userAppMetadata } = {}) {
     "@/lib/supabase/server": { createClient: async () => supabase },
     "@/lib/supabase/admin": { createAdminClient: () => supabase },
     "@/lib/server/image-processing": {
+      computeNormalizedImageHash: async () => "a".repeat(64),
       processImageForStorage: async (_raw, options) => {
         calls.push(["process", options]);
         if (failure === "decode") throw new Error("Decode failed");
@@ -219,17 +222,22 @@ test("POST /api/photos/draft requires current terms and privacy acceptance when 
 });
 
 test("successful free publication creates download copy while retaining private HEIC source", async () => {
+  const { decryptPacket } = loadTs("src/lib/server/watermark-crypto.ts");
   const { calls, post } = draftHarness();
   assert.equal((await post(uploadPath)).status, 201);
   const processCall = calls.find(([name]) => name === "process");
   const downloadCall = calls.find(([name]) => name === "download-copy");
-  assert.equal(Buffer.from(processCall[1].invisibleWatermarkPayload).toString("utf8"), "PADUSTOCK-IWM-v1");
-  assert.equal(Buffer.from(downloadCall[1]).toString("utf8"), "PADUSTOCK-IWM-v1");
+  assert.deepEqual(Buffer.from(processCall[1].invisibleWatermarkPayload), Buffer.from(downloadCall[1]));
+  const { certificate } = await decryptPacket(Buffer.from(downloadCall[1]), process.env.WATERMARK_SECRET_KEY);
+  assert.equal(certificate.photographer, "photographer");
+  assert.equal(certificate.license_terms, "CC BY-NC-ND 4.0");
+  assert.equal(certificate.reference_payload, undefined);
   const photo = calls.find(([name]) => name === "insert")[1];
+  assert.equal(certificate.photo_id, photo.id);
   assert.equal(photo.status, "published");
   assert.equal(photo.microstock_url, null);
   assert.equal(photo.watermark_enabled, true);
-  assert.equal(photo.download_watermark_version, "iwm-v1-placeholder");
+  assert.equal(photo.download_watermark_version, "iwm-v1-aes256gcm");
   assert.match(photo.image_url, /\.heic$/);
   assert.match(photo.download_url, /\/photo-downloads\/.+\.jpg$/);
   const metadata = calls.find(([name]) => name === "metadata")[1];
@@ -252,23 +260,33 @@ test("draft/external upload creates watermarked preview only and no download cop
 });
 
 test("draft forwards custom UTF-8 payload, respects opt-out, and rejects invalid/oversized payloads", async () => {
-  // 1. Custom non-blank payload preserved verbatim
+  const { decryptPacket } = loadTs("src/lib/server/watermark-crypto.ts");
+  // 1. Custom non-blank payload preserved verbatim inside encrypted certificate reference_payload
   const custom = "  Desa Padusan 🌿\nBaris 2\t ";
   {
     const { calls, post } = draftHarness();
     const res = await post(uploadPath, { watermark_enabled: true, watermark_payload: custom });
     assert.equal(res.status, 201);
     const processCall = calls.find(([name]) => name === "process");
-    assert.equal(Buffer.from(processCall[1].invisibleWatermarkPayload).toString("utf8"), custom);
+    const { certificate } = await decryptPacket(
+      Buffer.from(processCall[1].invisibleWatermarkPayload),
+      process.env.WATERMARK_SECRET_KEY
+    );
+    assert.equal(certificate.reference_payload, custom);
   }
 
-  // 2. Blank payload resolves to default PADUSTOCK-IWM-v1
+  // 2. Blank payload omits redundant reference_payload while encrypting certificate
   {
     const { calls, post } = draftHarness();
     const res = await post(uploadPath, { watermark_enabled: true, watermark_payload: "  \n\t " });
     assert.equal(res.status, 201);
     const processCall = calls.find(([name]) => name === "process");
-    assert.equal(Buffer.from(processCall[1].invisibleWatermarkPayload).toString("utf8"), "PADUSTOCK-IWM-v1");
+    const { certificate } = await decryptPacket(
+      Buffer.from(processCall[1].invisibleWatermarkPayload),
+      process.env.WATERMARK_SECRET_KEY
+    );
+    assert.equal(certificate.reference_payload, undefined);
+    assert.equal(certificate.protocol, "PADUSTOCK-WATERMARK-v1");
   }
 
   // 3. Opt-out skips invisible watermark embedding
@@ -396,6 +414,7 @@ test("new upload prepares/encrypts payload bytes once and embeds identical opaqu
       },
     },
     "@/lib/server/image-processing": {
+      computeNormalizedImageHash: async () => "b".repeat(64),
       processImageForStorage: async (_raw, opts) => {
         previewBytes = opts.invisibleWatermarkPayload;
         return { watermarkedBuffer: Buffer.from("preview"), width: 1080, height: 720, contentType: "image/jpeg", extension: "jpg" };
@@ -519,6 +538,7 @@ test("PATCH /api/photos/[id] reuses preview payload bytes, regenerates safely wh
         },
       },
       "@/lib/server/image-processing": {
+        computeNormalizedImageHash: async () => "c".repeat(64),
         processImageForStorage: async (_raw, opts) => {
           calls.push(["regen-preview", opts.invisibleWatermarkPayload]);
           return { watermarkedBuffer: Buffer.from("new-preview"), width: 1080, height: 720, contentType: "image/jpeg", extension: "jpg" };

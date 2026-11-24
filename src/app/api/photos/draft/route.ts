@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createWatermarkedDownloadCopy, processImageForStorage } from "@/lib/server/image-processing";
+import {
+  computeNormalizedImageHash,
+  createWatermarkedDownloadCopy,
+  processImageForStorage,
+} from "@/lib/server/image-processing";
 import { embedMetadata } from "@/lib/server/exif-writer";
 import { requirePhotoUser, readStagedPhoto, removeStagedPhoto, removePhotoObject } from "@/lib/server/photo-upload";
 import { ApiError, apiErrorResponse, readJson } from "@/lib/server/api-error";
@@ -19,6 +23,7 @@ import {
 } from "@/lib/legal-documents";
 import { watermarkPayload } from "@/lib/watermark-payload";
 import { prepareWatermarkPayloadBytes } from "@/lib/server/watermark-bytes";
+import { WatermarkCryptoError } from "@/lib/server/watermark-crypto";
 import { WatermarkError } from "@/lib/watermark/core";
 
 export const runtime = "nodejs";
@@ -53,34 +58,25 @@ function parseTags(value: unknown, required: string[]): string[] {
   return [...new Set([...required, ...value.map(tag => tag.trim()).filter(Boolean)])].slice(0, 30);
 }
 
-async function parseWatermarkSetting(
-  body: Record<string, unknown>,
-  context: { photoId: string; userId: string },
-): Promise<{
+function validateWatermarkInput(body: Record<string, unknown>): {
   watermarkEnabled: boolean;
-  payload: Uint8Array | null;
-  watermarkVersion: string;
-}> {
+  customPayload: string;
+} {
   if (body.watermark_enabled !== undefined && typeof body.watermark_enabled !== "boolean") {
     throw new ApiError(400, "Pengaturan watermark tidak valid.");
   }
   if (body.watermark_enabled === false) {
-    return { watermarkEnabled: false, payload: null, watermarkVersion: DOWNLOAD_WATERMARK_VERSION_NONE };
+    return { watermarkEnabled: false, customPayload: "" };
   }
   if (body.watermark_payload !== undefined && typeof body.watermark_payload !== "string") {
     throw new ApiError(400, "Payload watermark harus berupa teks.");
   }
-  const resolved = watermarkPayload(body.watermark_payload ?? "");
+  const rawPayload = typeof body.watermark_payload === "string" ? body.watermark_payload : "";
+  const resolved = watermarkPayload(rawPayload);
   if (!resolved.valid) {
     throw new ApiError(400, "Payload watermark melebihi batas 512 byte UTF-8. Kurangi teks payload tanpa pemotongan otomatis.");
   }
-  // Prepare / encrypt payload bytes ONCE so both preview and free-download copy receive identical bytes.
-  const prepared = await prepareWatermarkPayloadBytes({
-    photoId: context.photoId,
-    userId: context.userId,
-    customPayload: resolved.payload,
-  });
-  return { watermarkEnabled: true, payload: prepared.payloadBytes, watermarkVersion: prepared.version };
+  return { watermarkEnabled: true, customPayload: rawPayload };
 }
 
 export async function POST(request: NextRequest) {
@@ -111,11 +107,38 @@ export async function POST(request: NextRequest) {
           "Setujui Syarat & Ketentuan terbaru sebelum mempublikasikan foto unduhan gratis.",
         );
       }
-      const { watermarkEnabled, payload: invisibleWatermarkPayload, watermarkVersion } = await parseWatermarkSetting(
-        body,
-        { photoId, userId: user.id },
-      );
+      const { watermarkEnabled, customPayload } = validateWatermarkInput(body);
       const rawBuffer = await readStagedPhoto(supabase, user.id, path);
+
+      const { data: profile } = await supabase.from("profiles").select("display_name, full_name").eq("id", user.id).single();
+      const artist = profile?.full_name || profile?.display_name || "Fotografer Padustock";
+
+      // Prepare / encrypt the ownership certificate ONCE per upload so both preview
+      // and free-download copy receive the exact same encrypted opaque bytes.
+      let invisibleWatermarkPayload: Uint8Array | null = null;
+      let watermarkVersion: string = DOWNLOAD_WATERMARK_VERSION_NONE;
+      if (watermarkEnabled) {
+        try {
+          const imageHash = await computeNormalizedImageHash(rawBuffer);
+          const prepared = await prepareWatermarkPayloadBytes({
+            photoId,
+            userId: user.id,
+            photographer: artist,
+            licenseMode: publishDirectly ? "free" : "draft",
+            imageHash,
+            customPayload,
+          });
+          invisibleWatermarkPayload = prepared.payloadBytes;
+          watermarkVersion = prepared.version;
+        } catch (error) {
+          if (error instanceof WatermarkCryptoError) {
+            if (error.code === "KEY_UNAVAILABLE") throw new ApiError(503, error.message);
+            if (error.code === "PAYLOAD_TOO_LARGE") throw new ApiError(422, error.message);
+            throw new ApiError(400, error.message);
+          }
+          throw error;
+        }
+      }
 
       // Generate and verify all required outputs before writing any permanent storage object.
       let watermarkedBuffer: Buffer;
@@ -150,8 +173,6 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      const { data: profile } = await supabase.from("profiles").select("display_name, full_name").eq("id", user.id).single();
-      const artist = profile?.full_name || profile?.display_name || "Fotografer Padustock";
       const finalBuffer = embedMetadata(watermarkedBuffer, {
         caption: `${captionEn} | ${captionId}`,
         tags: [...new Set([...tagsEn, ...tagsId])].slice(0, 30), artist,

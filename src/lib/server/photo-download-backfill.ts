@@ -3,15 +3,15 @@
 // or `photo_license_history`.
 import crypto from "node:crypto";
 import {
+  DOWNLOAD_WATERMARK_VERSION_ENCRYPTED,
   DOWNLOAD_WATERMARK_VERSION_NONE,
-  DOWNLOAD_WATERMARK_VERSION_PLACEHOLDER,
   MAX_PHOTO_SIZE,
   PHOTO_DOWNLOAD_BUCKET,
 } from "@/lib/photo-upload";
 import { LEGAL_DOCUMENTS, hasAuthorizedTermsAcceptance } from "@/lib/legal-documents";
 import { externalLicenseLink } from "@/lib/photo-licensing";
 import { extractStoragePath } from "@/lib/storage";
-import { createWatermarkedDownloadCopy } from "@/lib/server/image-processing";
+import { computeNormalizedImageHash, createWatermarkedDownloadCopy } from "@/lib/server/image-processing";
 import { prepareWatermarkPayloadBytes } from "@/lib/server/watermark-bytes";
 
 export { hasAuthorizedTermsAcceptance };
@@ -82,7 +82,7 @@ export interface BackfillOptions {
   requiredTermsVersion?: string;
   targetWatermarkVersion?: string;
   regenerateVersion?: string | null;
-  resolvePayload?: (photo: BackfillPhotoRow) => Promise<Uint8Array> | Uint8Array;
+  resolvePayload?: (photo: BackfillPhotoRow, rawBuffer: Buffer) => Promise<Uint8Array> | Uint8Array;
   createDownloadCopy?: typeof createWatermarkedDownloadCopy;
 }
 
@@ -104,15 +104,18 @@ export async function runPhotoDownloadBackfill(
       );
     }
   }
-  const targetWatermarkVersion = options.targetWatermarkVersion ?? DOWNLOAD_WATERMARK_VERSION_PLACEHOLDER;
+  const targetWatermarkVersion = options.targetWatermarkVersion ?? DOWNLOAD_WATERMARK_VERSION_ENCRYPTED;
   const regenerateVersion = options.regenerateVersion ?? null;
   const createDownloadCopy = options.createDownloadCopy ?? createWatermarkedDownloadCopy;
   const resolvePayload =
     options.resolvePayload ??
-    (async (photo: BackfillPhotoRow) => {
+    (async (photo: BackfillPhotoRow, rawBuffer: Buffer) => {
+      const imageHash = await computeNormalizedImageHash(rawBuffer);
       const prepared = await prepareWatermarkPayloadBytes({
         photoId: photo.id,
         userId: photo.user_id ?? "",
+        licenseMode: "free",
+        imageHash,
       });
       return prepared.payloadBytes;
     });
@@ -233,7 +236,7 @@ export async function runPhotoDownloadBackfill(
       }
       const rawBuffer = Buffer.from(await blob.arrayBuffer());
 
-      const payload = photo.watermark_enabled ? await resolvePayload(photo) : null;
+      const payload = photo.watermark_enabled ? await resolvePayload(photo, rawBuffer) : null;
       const { downloadBuffer } = await createDownloadCopy(rawBuffer, payload);
 
       const safeVersion = desiredVersion.replace(/[^a-z0-9_-]/gi, "-");

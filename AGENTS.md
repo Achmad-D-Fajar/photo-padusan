@@ -210,20 +210,23 @@ byte-identical free-download instructions:
     version `1`, profile `1`, `Delta = 48`, 3x repetition with xorshift32
     `0x50444957` Fisher-Yates placement, 40-byte SHA-256 framing, 512-byte cap).
     `scripts/extract-watermark.mjs` imports the exact same core via `scripts/load-ts.cjs`.
-  - **Wafa's crypto module owns payload fields, serialization, encryption/decryption,
-    and key handling.** The watermark core accepts and returns opaque bytes
-    (`Uint8Array`) via `embedWatermark(image, payload)` / `extractWatermark(image)`
-    — coordinate the exact byte contract with Wafa rather than inventing a second
-    crypto format or payload schema.
+  - **Wafa's crypto module (`src/lib/server/watermark-crypto.ts`)** is integrated
+    through `src/lib/server/watermark-bytes.ts` (embed) and
+    `src/app/api/photos/extract/route.ts` (recovery) using AES-256-GCM +
+    PBKDF2-HMAC-SHA256 (`100,000` iterations, `PW | LEN | SALT | NONCE | CT | TAG`,
+    AAD `"PADUSTOCK-WATERMARK-v1"`, compact wire certificate hydrated to
+    `CopyrightCertificate`, download version marker `iwm-v1-aes256gcm`).
+    The watermark core (`src/lib/watermark/core.ts`) stays opaque-byte-based.
   - **Sheril owns evaluation and robustness testing.** Do not alter her evaluation
     plan or claim unmeasured attack robustness.
 - **Agreed key model (current decision)**:
-  - **Server-managed key with no photographer passphrase input field.** Keep
-    keys strictly server-side inside Wafa's crypto integration; do NOT add a
-    passphrase form field to upload, edit, or extraction pages unless Achmad
-    explicitly revises this decision.
-  - New uploads must encrypt the ownership payload **once** per photo and embed
-    those exact encrypted bytes into both the preview and the free-download copy.
+  - **Server-managed key (`WATERMARK_SECRET_KEY`, 8–128 chars, server-only) with
+    no photographer passphrase input field.** Fail closed (`503`) when the key
+    is missing; do NOT add a passphrase form field to upload, edit, or extraction
+    pages unless Achmad explicitly revises this decision.
+  - New uploads encrypt the ownership certificate **once** per photo via
+    `prepareWatermarkPayloadBytes` and embed those exact encrypted bytes into
+    both the preview and the free-download copy.
 - **Verified capacity & 512 B vs. 16,384 B discrepancy**:
   - Profile 1 capacity is `max(0, min(512, floor(B / 24) - 40))` opaque bytes
     (where `B = floor(width / 8) * floor(height / 8)`). Example verified limits:
